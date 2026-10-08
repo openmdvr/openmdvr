@@ -158,8 +158,14 @@ single small VM. See [docs/architecture.md](docs/architecture.md),
 
 ## Security
 
-Security is the reason this project exists. Read the
-[security model](docs/security-model.md) and report vulnerabilities
+Security is the reason this project exists. Several widely deployed MDVR
+platforms have publicly documented critical vulnerabilities: SQL injection,
+default credentials, arbitrary file upload and path traversal.
+[docs/mdvr-platform-security.md](docs/mdvr-platform-security.md) lists those
+records with their sources and shows how OpenMDVR is designed against each
+pattern, including what it cannot fix.
+
+Read the [security model](docs/security-model.md) and report vulnerabilities
 privately as described in [SECURITY.md](SECURITY.md).
 
 ## Contributing

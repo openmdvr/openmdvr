@@ -7,6 +7,10 @@ cut-off). This document describes how the platform protects them, what has
 been tested, and the known gaps. Report vulnerabilities via
 [SECURITY.md](../SECURITY.md).
 
+For publicly documented vulnerabilities in common commercial MDVR platforms
+and how this design addresses each pattern, see
+[mdvr-platform-security.md](mdvr-platform-security.md).
+
 ## Threat model (summary)
 
 | Actor | Goal | Primary controls |
