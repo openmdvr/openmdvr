@@ -36,7 +36,7 @@ jobs:
           bash infra/init-env.sh
           docker compose -f infra/docker-compose.yml up -d postgres
           docker compose -f infra/docker-compose.yml run --rm migrate
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Install dependencies
