@@ -26,7 +26,7 @@
 # onto the new commit, update ZLM_COMMIT, rebuild and re-verify audio
 # playback over WebRTC.
 
-FROM ubuntu:24.04 AS build
+FROM ubuntu:26.04 AS build
 ARG MODEL=Release
 ARG ZLM_COMMIT=296dcebe8f3e81121e2c835cc9503ac5c25e2a1a
 ARG LIBSRTP_VERSION=2.3.0
@@ -71,7 +71,7 @@ RUN cmake -DCMAKE_BUILD_TYPE=${MODEL} -DENABLE_WEBRTC=true \
     # silently stay broken until someone tested it in the field.
     ldd "/opt/media/ZLMediaKit/release/linux/${MODEL}/MediaServer" | grep -q libavcodec
 
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 ARG MODEL=Release
 
 # ffmpeg: provides the libav* libraries MediaServer links against and the
