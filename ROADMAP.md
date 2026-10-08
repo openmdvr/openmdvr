@@ -16,7 +16,7 @@ is **not** production-certified. Priorities, roughly in order:
 - [ ] Replace react-leaflet (Hippocratic license) with plain Leaflet bindings
 - [ ] One-command install script and hardened production compose profile
 - [ ] Horizontal scaling guide (multiple device-server instances behind a TCP load balancer)
-- [ ] Published load-test results on reference hardware for each release
+- [x] Load-test results on reference hardware ([docs/scalability.md](docs/scalability.md)); repeat for each release
 
 ## Devices
 - [ ] JT808 remote configuration, photo and recorded-video playback
