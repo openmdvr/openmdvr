@@ -6,4 +6,4 @@ bcrypt==4.2.1
 pydantic==2.10.4
 email-validator==2.2.0
 httpx==0.28.1
-boto3==1.43.95
+boto3==1.43.108
