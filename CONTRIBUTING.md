@@ -39,7 +39,7 @@ No hardware? Use the simulators in `jt808-server/testclient/`
 cd jt808-server && go vet ./... && go test ./...
 
 # API (needs the Postgres container running)
-cd api && pip install -r requirements.txt && pytest
+cd api && pip install -r requirements.txt -r requirements-dev.txt && pytest
 
 # Row Level Security isolation suite
 cd infra/postgres/tests && pytest

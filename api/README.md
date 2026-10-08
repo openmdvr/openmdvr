@@ -51,7 +51,7 @@ Postgres). `tests/conftest.py` loads `infra/.env` if present and defaults to
 ```bash
 cd api
 python -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt pytest pytest-asyncio
+.venv/bin/python -m pip install -r requirements.txt -r requirements-dev.txt
 .venv/bin/python -m pytest tests/ -v
 ```
 

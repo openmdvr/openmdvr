@@ -16,8 +16,8 @@ jobs:
       run:
         working-directory: jt808-server
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.25"
           cache-dependency-path: jt808-server/go.sum
@@ -30,18 +30,18 @@ jobs:
     name: API + RLS isolation (Postgres/TimescaleDB)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Start database and apply migrations
         run: |
           bash infra/init-env.sh
           docker compose -f infra/docker-compose.yml up -d postgres
           docker compose -f infra/docker-compose.yml run --rm migrate
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install dependencies
         run: |
-          pip install -r api/requirements.txt -r infra/postgres/tests/requirements.txt pytest-asyncio
+          pip install -r api/requirements.txt -r api/requirements-dev.txt -r infra/postgres/tests/requirements.txt
       - name: RLS isolation tests
         run: pytest -q infra/postgres/tests
       - name: API tests
@@ -55,8 +55,8 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "20"
           cache: npm
@@ -69,9 +69,11 @@ jobs:
     name: Secret scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # The gitleaks CLI directly: the GitHub Action needs a paid license for
+      # organization-owned repositories, the CLI does not.
+      - name: gitleaks
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.21.2 dir /repo --no-banner --redact -v
