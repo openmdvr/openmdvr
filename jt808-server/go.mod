@@ -9,7 +9,7 @@ require (
 	github.com/cuteLittleDevil/go-jt808/protocol v1.18.0
 	github.com/cuteLittleDevil/go-jt808/shared v1.6.0
 	github.com/google/uuid v1.6.0
-	github.com/jackc/pgx/v5 v5.10.0
+	github.com/jackc/pgx/v5 v5.11.0
 	golang.org/x/sync v0.22.0
 )
 
