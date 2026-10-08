@@ -1,0 +1,256 @@
+services:
+  postgres:
+    image: timescale/timescaledb:2.17.2-pg16
+    container_name: openmdvr-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: openmdvr
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?set POSTGRES_SUPERUSER_PASSWORD in infra/.env}
+      APP_USER_PASSWORD: ${APP_USER_PASSWORD:?set APP_USER_PASSWORD in infra/.env}
+    ports:
+      # Loopback only: never expose Postgres directly to the network, not even
+      # in dev. Host port 55432 (not 5432) avoids clashing with a native
+      # Postgres that may already be running on the host.
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d openmdvr"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Applies pending ./postgres/migrations/* on EVERY `docker compose up`
+  # (local dev and every production deploy). Replaces mounting
+  # docker-entrypoint-initdb.d, which only runs on a completely empty volume
+  # and never on a redeploy over an initialized database. See
+  # postgres/apply_migrations.sh.
+  migrate:
+    image: timescale/timescaledb:2.17.2-pg16
+    container_name: openmdvr-migrate
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: openmdvr
+      PGUSER: postgres
+      PGPASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?set POSTGRES_SUPERUSER_PASSWORD in infra/.env}
+      # Variables expected by 0010_set_role_passwords.sh (a .sh migration);
+      # same contract as under docker-entrypoint-initdb.d.
+      POSTGRES_USER: postgres
+      POSTGRES_DB: openmdvr
+      APP_USER_PASSWORD: ${APP_USER_PASSWORD:?set APP_USER_PASSWORD in infra/.env}
+    volumes:
+      - ./postgres/migrations:/migrations:ro
+      - ./postgres/apply_migrations.sh:/apply_migrations.sh:ro
+    entrypoint: ["bash", "/apply_migrations.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  jt808-server:
+    build:
+      context: ../jt808-server
+    container_name: openmdvr-jt808-server
+    restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: ${DEVICE_SERVER_NOFILE:-65536}
+        hard: ${DEVICE_SERVER_NOFILE:-65536}
+    environment:
+      JT808_LISTEN_ADDR: ":8808"
+      # Capacity limits (safety caps, not design limits; see docs/scalability.md).
+      # All configurable in infra/.env; raise DEVICE_SERVER_NOFILE together with them.
+      JT808_MAX_CONNECTIONS: ${JT808_MAX_CONNECTIONS:-5000}
+      JT1078_MAX_CONNECTIONS: ${JT1078_MAX_CONNECTIONS:-5000}
+      GT06_MAX_CONNECTIONS: ${GT06_MAX_CONNECTIONS:-5000}
+      ALARM_CLIP_MAX_CONNECTIONS: ${ALARM_CLIP_MAX_CONNECTIONS:-200}
+      PG_MAX_CONNS: ${PG_MAX_CONNS:-16}
+      # Inside the compose network the host is the service name (postgres)
+      # and the port is the container port (5432), not the host-mapped 55432.
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: openmdvr
+      PGUSER: app_user
+      APP_USER_PASSWORD: ${APP_USER_PASSWORD:?set APP_USER_PASSWORD in infra/.env}
+      # JT1078 video bridge -> ZLMediaKit.
+      JT1078_LISTEN_ADDR: ":8081"
+      JT1078_LISTEN_PORT: "8081"
+      HTTP_LISTEN_ADDR: ":8082"
+      # IP sent to the device (in 0x9101) for its video connection. localhost
+      # is enough for the simulator in local dev; in production it must be
+      # the server's public IP.
+      PUBLIC_IP: ${JT808_PUBLIC_IP:-127.0.0.1}
+      ZLM_BASE_URL: "http://zlmediakit:80"
+      ZLM_API_SECRET: ${ZLM_API_SECRET:?set ZLM_API_SECRET in infra/.env}
+      # http://127.0.0.1/... only works in local dev (browser and Docker on the
+      # same machine). In production use the public IP or domain; see
+      # infra/.env.example.
+      ZLM_PLAY_URL_FORMAT: ${ZLM_PLAY_URL_FORMAT:-http://127.0.0.1/rtp/%s.live.flv}
+      # WebRTC live video: public base URL used to build the WHEP signaling
+      # URL. Same dev-vs-production rule as ZLM_PLAY_URL_FORMAT.
+      ZLM_WEBRTC_PLAY_BASE_URL: ${ZLM_WEBRTC_PLAY_BASE_URL:-http://127.0.0.1}
+      # GT06 (camera-less GPS trackers). Public port, same as JT808.
+      GT06_LISTEN_ADDR: ":5023"
+      # GT06 video dashcams (JIMI JC261/JC400: GT06 telemetry + RTMP push).
+      # GT06_VIDEO_APP is the RTMP app name the device publishes to
+      # (configured on the device with RSERVICE "<host>/<GT06_VIDEO_APP>").
+      # ZLM_GT06_PLAY_BASE_URL: in local dev ZLMediaKit serves on
+      # ZLM_HTTP_PORT; in production use the public domain with scheme.
+      GT06_VIDEO_APP: ${GT06_VIDEO_APP:-live}
+      ZLM_GT06_PLAY_BASE_URL: ${ZLM_GT06_PLAY_BASE_URL:-http://127.0.0.1}
+      # Alarm video clip retrieval (GT06 dashcams). Public HTTP server,
+      # separate from HTTP_LISTEN_ADDR (8082, always internal): it must be
+      # reachable from the device's cellular network (receives the .ts via
+      # POST /upload/{imei}).
+      ALARM_CLIP_LISTEN_ADDR: ":8083"
+      ALARM_CLIP_PUBLIC_BASE_URL: ${ALARM_CLIP_PUBLIC_BASE_URL:-http://127.0.0.1:8083}
+      # S3-compatible storage (Cloudflare R2, see internal/storage), upload
+      # side. Empty values leave storage.New() in nil-safe mode so the rest
+      # of the service keeps working without a bucket.
+      R2_ENDPOINT: ${R2_ENDPOINT:-}
+      R2_ACCESS_KEY: ${R2_ACCESS_KEY:-}
+      R2_SECRET_KEY: ${R2_SECRET_KEY:-}
+      R2_BUCKET: ${R2_BUCKET:-}
+    ports:
+      # Unlike Postgres, these ports MUST be reachable from the internet in
+      # production (field devices connect over cellular). PUBLIC_BIND_HOST
+      # picks the interface: default 127.0.0.1 (local dev); set it to 0.0.0.0
+      # in production and control exposure with the cloud firewall. Leaving
+      # 127.0.0.1 would make them unreachable regardless of firewall rules.
+      # The HTTP control port (8082) is internal-only (API and ZLM hooks) in
+      # EVERY environment, so it never uses PUBLIC_BIND_HOST.
+      - "${PUBLIC_BIND_HOST:-127.0.0.1}:8808:8808"
+      - "${PUBLIC_BIND_HOST:-127.0.0.1}:8081:8081"
+      - "127.0.0.1:8082:8082"
+      - "${PUBLIC_BIND_HOST:-127.0.0.1}:5023:5023"
+      - "${PUBLIC_BIND_HOST:-127.0.0.1}:8083:8083"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      zlmediakit:
+        condition: service_started
+
+  api:
+    build:
+      context: ../api
+    container_name: openmdvr-api
+    restart: unless-stopped
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: openmdvr
+      PGUSER: app_user
+      APP_USER_PASSWORD: ${APP_USER_PASSWORD:?set APP_USER_PASSWORD in infra/.env}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in infra/.env}
+      API_KEY_PEPPER: ${API_KEY_PEPPER:?set API_KEY_PEPPER in infra/.env}
+      # Operational limits (rate limits, report windows, webhooks, DB pool).
+      # Defaults live in api/app/limits.py; override them in infra/.env.
+      API_DB_POOL_MAX_SIZE: ${API_DB_POOL_MAX_SIZE:-}
+      API_KEY_RATE_LIMIT_PER_MINUTE: ${API_KEY_RATE_LIMIT_PER_MINUTE:-}
+      API_KEY_FAIL_RATE_LIMIT_PER_MINUTE: ${API_KEY_FAIL_RATE_LIMIT_PER_MINUTE:-}
+      ROUTE_HISTORY_RATE_LIMIT_PER_MINUTE: ${ROUTE_HISTORY_RATE_LIMIT_PER_MINUTE:-}
+      SNAPSHOT_RATE_LIMIT_PER_MINUTE: ${SNAPSHOT_RATE_LIMIT_PER_MINUTE:-}
+      WEBHOOK_TEST_RATE_LIMIT_PER_MINUTE: ${WEBHOOK_TEST_RATE_LIMIT_PER_MINUTE:-}
+      REPORT_QUERY_TIMEOUT_MS: ${REPORT_QUERY_TIMEOUT_MS:-}
+      ROUTE_HISTORY_MAX_DAYS: ${ROUTE_HISTORY_MAX_DAYS:-}
+      ROUTE_HISTORY_MAX_POINTS: ${ROUTE_HISTORY_MAX_POINTS:-}
+      ROUTE_HISTORY_MAX_EVENTS: ${ROUTE_HISTORY_MAX_EVENTS:-}
+      DISTANCE_REPORT_MAX_DAYS: ${DISTANCE_REPORT_MAX_DAYS:-}
+      HOURS_REPORT_MAX_DAYS: ${HOURS_REPORT_MAX_DAYS:-}
+      GEOFENCE_REPORT_MAX_DAYS: ${GEOFENCE_REPORT_MAX_DAYS:-}
+      GEOFENCE_REPORT_MAX_VISITS: ${GEOFENCE_REPORT_MAX_VISITS:-}
+      WEBHOOK_MAX_ENDPOINTS_PER_TENANT: ${WEBHOOK_MAX_ENDPOINTS_PER_TENANT:-}
+      WEBHOOK_DELIVERY_TIMEOUT_SECONDS: ${WEBHOOK_DELIVERY_TIMEOUT_SECONDS:-}
+      WEBHOOK_MAX_ATTEMPTS: ${WEBHOOK_MAX_ATTEMPTS:-}
+      WEBHOOK_MAX_CONCURRENT_DELIVERIES: ${WEBHOOK_MAX_CONCURRENT_DELIVERIES:-}
+      # The service name resolves to the video bridge. Its internal HTTP
+      # port (8082) must NEVER be exposed to the internet; only this API
+      # should call it.
+      JT1078_BRIDGE_BASE_URL: "http://jt808-server:8082"
+      # S3-compatible storage (see app/storage.py), read side: Python only
+      # signs download URLs and never sees the bytes. Empty values make URL
+      # signing raise StorageNotConfigured without breaking the rest of the
+      # API.
+      R2_ENDPOINT: ${R2_ENDPOINT:-}
+      R2_ACCESS_KEY: ${R2_ACCESS_KEY:-}
+      R2_SECRET_KEY: ${R2_SECRET_KEY:-}
+      R2_BUCKET: ${R2_BUCKET:-}
+    ports:
+      - "${PUBLIC_BIND_HOST:-127.0.0.1}:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: ../web
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://127.0.0.1:8000}
+    container_name: openmdvr-web
+    restart: unless-stopped
+    ports:
+      - "${PUBLIC_BIND_HOST:-127.0.0.1}:5175:80"
+
+  zlmediakit:
+    # Custom image: the same upstream commit as the official image (master
+    # @296dcebe) plus the AAC<->Opus audio transcoding from the upstream
+    # feature/transcode2 branch and FFmpeg, required for audio in WebRTC live
+    # video. Everything is pinned by commit/patch in zlmediakit/Dockerfile.
+    # The first build compiles C++ (~15-25 min); Docker caches it afterwards.
+    build:
+      context: ./zlmediakit
+    image: openmdvr-zlmediakit:audio-296dcebe
+    container_name: openmdvr-zlmediakit
+    restart: unless-stopped
+    entrypoint: ["/docker-entrypoint.sh"]
+    environment:
+      ZLM_API_SECRET: ${ZLM_API_SECRET:?set ZLM_API_SECRET in infra/.env}
+      # Default 1 for local dev; set to 0 in production (apiDebug=1 logs
+      # the playback ticket). See zlmediakit/config.ini.
+      ZLM_API_DEBUG: ${ZLM_API_DEBUG:-1}
+      # Native ZLMediaKit mechanism (config.ini: "externIP=$EXTERNIP").
+      # Never leave it empty, even in dev: with Docker Desktop ZLMediaKit
+      # would otherwise advertise the container's internal IP in its ICE
+      # candidates, which the host browser cannot reach (SDP negotiates but
+      # no RTP ever arrives). Default 127.0.0.1 for local dev (port 8880 is
+      # published there); in production use the server's public IP.
+      EXTERNIP: ${ZLM_EXTERN_IP:-127.0.0.1}
+    volumes:
+      - ./zlmediakit/config.ini:/opt/media/conf/config.ini:ro
+      - ./zlmediakit/docker-entrypoint.sh:/docker-entrypoint.sh:ro
+    ports:
+      # 80 (HTTP API, HTTP-FLV): the browser consumes it directly, so it is
+      # public in production. The rtp_proxy (10000 + port_range
+      # 30000-35000) is never exposed: only jt808-server, on the same docker
+      # network, connects to it.
+      # ZLM_HTTP_PORT (host side, default 80) exists because a reverse proxy
+      # may already own host port 80; in that case set another port (e.g.
+      # 8090) and include it in ZLM_PLAY_URL_FORMAT.
+      # 1935 (RTMP): public because GT06 dashcams push their video directly
+      # over RTMP from the cellular network. Authorization is enforced by the
+      # on_publish hook, not by this bind: exposing the port is necessary but
+      # not sufficient.
+      #
+      # Known gap (low severity): no per-IP connection/rate limit on this
+      # port; ZLMediaKit has no built-in cap (unlike the JT808/GT06 servers'
+      # MaxConnections). Harden at the edge (firewall/proxy) if needed.
+      - "${PUBLIC_BIND_HOST:-127.0.0.1}:${ZLM_HTTP_PORT:-80}:80"
+      - "${PUBLIC_BIND_HOST:-127.0.0.1}:1935:1935"
+      # 8880 UDP+TCP: WebRTC media port. Signaling (SDP) goes over HTTP (port
+      # 80, /index/api/whep), but media (STUN/DTLS/SRTP) flows directly
+      # between the browser and this port, never through an HTTP reverse
+      # proxy. Not 8000 (used by the api service). It must be published with
+      # the same internal/external number: config.ini ([rtc] port/tcpPort
+      # 8880) requires the advertised ICE candidates to match what the
+      # NAT/firewall forwards. UDP is the primary path; TCP is ZLMediaKit's
+      # fallback for networks that block UDP.
+      - "${PUBLIC_BIND_HOST:-127.0.0.1}:8880:8880/udp"
+      - "${PUBLIC_BIND_HOST:-127.0.0.1}:8880:8880/tcp"
+
+volumes:
+  postgres_data:

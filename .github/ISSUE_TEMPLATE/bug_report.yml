@@ -1,0 +1,30 @@
+name: Bug report
+description: Something is broken. (Security problems → see SECURITY.md, do not file here.)
+labels: [bug]
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options: [jt808-server (device ingestion), video bridge / ZLMediaKit, api, web dashboard, infra / deployment, docs]
+    validations: { required: true }
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened and what did you expect?
+    validations: { required: true }
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Commands, simulator used, or device model + firmware.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / packet dumps
+      description: Redact IMEIs, terminal IDs, SIM numbers, IPs and tokens.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Commit or version

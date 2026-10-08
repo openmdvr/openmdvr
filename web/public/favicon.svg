@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none" role="img" aria-label="OpenMDVR">
+  <path d="M32 5 L54 13 V30 C54 44 44.5 54 32 59 C19.5 54 10 44 10 30 V13 Z" stroke="#3b82f6" stroke-width="4" stroke-linejoin="round"/>
+  <circle cx="32" cy="25" r="8" stroke="#3b82f6" stroke-width="4"/>
+  <circle cx="32" cy="25" r="2.5" fill="#3b82f6"/>
+  <path d="M27 50 L30 38 M37 50 L34 38" stroke="#3b82f6" stroke-width="3" stroke-linecap="round"/>
+  <path d="M32 40 V42 M32 46 V48" stroke="#3b82f6" stroke-width="2" stroke-linecap="round"/>
+</svg>

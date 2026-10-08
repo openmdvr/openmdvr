@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/openmdvr/openmdvr/security/advisories/new
+    about: Please report vulnerabilities privately, not as public issues.
+  - name: Questions and ideas
+    url: https://github.com/openmdvr/openmdvr/discussions
+    about: Ask questions and share deployment experiences in Discussions.

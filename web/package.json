@@ -1,0 +1,37 @@
+{
+  "name": "openmdvr-web",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@maplibre/maplibre-gl-leaflet": "0.1.4",
+    "leaflet": "^1.9.4",
+    "leaflet-hotline": "^0.4.0",
+    "leaflet.markercluster": "^1.5.3",
+    "lucide-react": "1.46.0",
+    "maplibre-gl": "6.11.2",
+    "mpegts.js": "1.8.2",
+    "plyr": "^3.8.4",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-leaflet": "^4.2.1",
+    "react-leaflet-cluster": "^3.1.1",
+    "react-router-dom": "6.30.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/leaflet": "^1.9.22",
+    "@types/leaflet.markercluster": "^1.5.6",
+    "@types/react": "18.3.18",
+    "@types/react-dom": "18.3.5",
+    "@vitejs/plugin-react": "4.3.4",
+    "tailwindcss": "^4.3.3",
+    "typescript": "5.7.2",
+    "vite": "6.4.3"
+  }
+}

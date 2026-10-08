@@ -1,0 +1,2252 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 27807005..7223d4d6 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -553,8 +553,6 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/3rdpart)
+ 
+ add_subdirectory(3rdpart)
+ 
+-add_subdirectory(src)
+-
+ add_subdirectory(ext-codec)
+ 
+ if(ENABLE_SRT)
+@@ -569,6 +567,8 @@ if(ENABLE_API)
+   add_subdirectory(api)
+ endif()
+ 
++add_subdirectory(src)
++
+ ##############################################################################
+ 
+ if(ENABLE_PLAYER AND ENABLE_FFMPEG)
+diff --git a/api/source/mk_media.cpp b/api/source/mk_media.cpp
+index 405995db..98127913 100755
+--- a/api/source/mk_media.cpp
++++ b/api/source/mk_media.cpp
+@@ -11,6 +11,7 @@
+ #include "mk_media.h"
+ #include "Util/logger.h"
+ #include "Common/Device.h"
++#include "Util/mini.h"
+ 
+ using namespace std;
+ using namespace toolkit;
+diff --git a/api/source/mk_rtp_server.cpp b/api/source/mk_rtp_server.cpp
+index c9a19ed4..4dd2f146 100644
+--- a/api/source/mk_rtp_server.cpp
++++ b/api/source/mk_rtp_server.cpp
+@@ -14,6 +14,7 @@ using namespace toolkit;
+ 
+ #if defined(ENABLE_RTPPROXY)
+ #include "Rtp/RtpServer.h"
++#include "Common/config.h"
+ using namespace mediakit;
+ 
+ API_EXPORT mk_rtp_server API_CALL mk_rtp_server_create(uint16_t port, int tcp_mode, const char *stream_id) {
+diff --git a/conf/config.ini b/conf/config.ini
+index 72600377..09677657 100644
+--- a/conf/config.ini
++++ b/conf/config.ini
+@@ -92,7 +92,15 @@ auto_close=0
+ # Set to 0 to disable this feature, which means dropping a publisher will immediately disconnect all its current players.
+ # This value must not exceed the player's configured timeout.
+ continue_push_ms=15000
+-
++# 是否启用音频转码
++# 主要实现进出RTC音频流的自动转码，代码实现详见 RtcMediaSource.h/cpp，当前实现
++# 1. 将RTC收到的Opus音频流，转成AAC流，并传到MultiMediaSourceMuxer中的其他流中
++# 2. 将从MultiMediaSourceMuxer中收到的AAC音频流，转成OPUS，并送到RTC流中
++# 音频转码底层使用FFMPEG来实现，需要打开FFMPEG, 即编译时必须指定 -DENABLE_FFMPEG=1,  当前已知支持FFMPEG 4.x 5.x 和 6.0，
++# 在ubuntu中可通过以下指令来安装: apt-get install libavcodec-dev libavutil-dev libswscale-dev libresample-dev
++# 此外音频转码正常都是用于webrtc的，一般也会开启WEBRTC, 即-DENABLE_WEBRTC=1, 此前必须自己装好libsrtp库, 安装过程详见wiki
++# audio_transcode配置项可通过配置文件，hook来打开，注意如果编译时没启用FFMPEG，此选项会自动关闭，使用此分支前得先确保启用FFMPEG！
++audio_transcode=1
+ # 平滑发送定时器间隔，单位毫秒，置0则关闭；开启后影响cpu性能同时增加内存
+ # 该配置开启后可以解决一些流发送不平滑导致zlmediakit转发也不平滑的问题
+ # Smooth sending timer interval in milliseconds (0 to disable). Enabling this increases CPU and memory usage.
+@@ -111,9 +119,12 @@ enable_hls_fmp4=0
+ # Whether to enable MP4 recording.
+ enable_mp4=0
+ 
+-# 是否开启转换为rtsp/webrtc
+-# Whether to enable conversion to RTSP/WebRTC.
++# 是否开启转换为rtsp
++# Whether to enable conversion to RTSP.
+ enable_rtsp=1
++# 是否开启转换为rtc
++# Whether to enable conversion to WEBRTC.
++enable_rtc=1
+ 
+ # 是否开启转换为rtmp/flv
+ # Whether to enable conversion to RTMP/FLV.
+@@ -158,6 +169,11 @@ hls_demand=0
+ # Whether to generate RTSP[S] streams on demand.
+ rtsp_demand=0
+ 
++# rtc协议是否按需生成
++# Whether to generate WEBRTC streams on demand.
++rtc_demand=0
++
++
+ # rtmp[s]、http[s]-flv、ws[s]-flv协议是否按需生成
+ # Whether to generate RTMP[S], HTTP[S]-FLV, and WS[S]-FLV streams on demand.
+ rtmp_demand=0
+@@ -289,6 +305,11 @@ fastRegister=0
+ # File extension for fMP4 HLS segment files, e.g. .mp4 or .m4s (the standard extension for fMP4 media segments).
+ # The init segment is always init.mp4, and mpegts segments are always .ts.
+ fmp4SegExt=.mp4
++# 转码成opus音频时的比特率
++opusBitrate=64000
++# 转码成AAC音频时的比特率
++aacBitrate=64000
++
+ [hook]
+ # 是否启用hook事件，启用后，推拉流都将进行鉴权
+ # Whether to enable webhook events. When enabled, pushing and pulling streams requires authentication.
+@@ -645,6 +666,10 @@ preferredCodecA=PCMA,PCMU,opus,mpeg4-generic
+ # 以下范例为所有支持的视频codec
+ # Supported RTC video codecs (listed in descending priority).
+ preferredCodecV=H264,H265,AV1,VP9,VP8
++# 是否开启RTC协议的G711转码，开启后
++# 能将传给rtc的g711音频转成opus
++# 将由rtc流入g711音频转成aac，并转给其他协议流
++transcodeG711=0
+ 
+ # webrtc比特率设置
+ # WebRTC bitrate settings.
+diff --git a/ext-codec/AAC.cpp b/ext-codec/AAC.cpp
+index 1a406c9b..75a38d43 100644
+--- a/ext-codec/AAC.cpp
++++ b/ext-codec/AAC.cpp
+@@ -21,9 +21,9 @@ using namespace std;
+ using namespace toolkit;
+ 
+ namespace mediakit{
++unsigned const samplingFrequencyTable[16] = { 96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350, 0, 0, 0 };
+ 
+ #ifndef ENABLE_MP4
+-unsigned const samplingFrequencyTable[16] = { 96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350, 0, 0, 0 };
+ 
+ class AdtsHeader {
+ public:
+@@ -254,6 +254,21 @@ private:
+ };
+ 
+ ////////////////////////////////////////////////////////////////////////////////////////////////////
++AACTrack::AACTrack(int samplerate, int channel, int profile) : _channel(channel), _sampleRate(samplerate) {
++    uint8_t audioSpecificConfig[2] = { 0 };
++    uint8_t audioObjectType = profile+1;
++    int samplingFrequencyIndex = 0;
++    for (size_t i = 0; i < sizeof(samplingFrequencyTable) / sizeof(samplingFrequencyTable[0]); i++) {
++        if (samplingFrequencyTable[i] == (unsigned)samplerate) {
++            samplingFrequencyIndex = i;
++            break;
++        }
++    }
++    _cfg.resize(2);
++    _cfg[0] = (audioObjectType << 3) | (samplingFrequencyIndex >> 1);
++    _cfg[1] = (samplingFrequencyIndex << 7) | (channel << 3);
++    // update();
++}
+ 
+ AACTrack::AACTrack(const string &aac_cfg) {
+     if (aac_cfg.size() < 2) {
+@@ -383,6 +398,8 @@ CodecId getCodec() {
+ }
+ 
+ Track::Ptr getTrackByCodecId(int sample_rate, int channels, int sample_bit) {
++    if (sample_rate && channels)
++        return std::make_shared<AACTrack>(sample_rate, channels, 1);
+     return std::make_shared<AACTrack>();
+ }
+ 
+diff --git a/ext-codec/AAC.h b/ext-codec/AAC.h
+index 66fe0073..852bb44b 100644
+--- a/ext-codec/AAC.h
++++ b/ext-codec/AAC.h
+@@ -28,7 +28,7 @@ public:
+     using Ptr = std::shared_ptr<AACTrack>;
+ 
+     AACTrack() = default;
+-
++    AACTrack(int samplerate, int channel, int profile=1);
+     /**
+      * 通过aac extra data 构造对象
+      * Construct object through AAC extra data
+diff --git a/ext-codec/G711.h b/ext-codec/G711.h
+index 3afc13ab..aadad0d8 100644
+--- a/ext-codec/G711.h
++++ b/ext-codec/G711.h
+@@ -22,7 +22,7 @@ namespace mediakit{
+ class G711Track : public AudioTrackImp{
+ public:
+     using Ptr = std::shared_ptr<G711Track>;
+-    G711Track(CodecId codecId, int sample_rate, int channels, int sample_bit) : AudioTrackImp(codecId, 8000, 1, 16) {}
++    G711Track(CodecId codecId, int sample_rate = 8000, int channels = 1, int sample_bit = 16) : AudioTrackImp(codecId, sample_rate, channels, sample_bit) {}
+ 
+     toolkit::Buffer::Ptr getExtraData() const override;
+     void setExtraData(const uint8_t *data, size_t size) override;
+diff --git a/server/WebApi.cpp b/server/WebApi.cpp
+index 0ae6b155..ececd3dd 100755
+--- a/server/WebApi.cpp
++++ b/server/WebApi.cpp
+@@ -47,6 +47,7 @@
+ #include "Player/PlayerProxy.h"
+ #include "Pusher/PusherProxy.h"
+ #include "Rtp/RtpProcess.h"
++#include "Rtp/RtpSender.h"
+ #include "Record/MP4Reader.h"
+ 
+ #if defined(ENABLE_RTPPROXY)
+diff --git a/src/Codec/Transcode.cpp b/src/Codec/Transcode.cpp
+index 9f5d1125..552f37d4 100644
+--- a/src/Codec/Transcode.cpp
++++ b/src/Codec/Transcode.cpp
+@@ -13,16 +13,21 @@
+ #include <dlfcn.h>
+ #endif
+ #include "Util/File.h"
++#include "Util/util.h"
+ #include "Util/uv_errno.h"
++#include <float.h>
+ #include "Transcode.h"
+ #include "Common/config.h"
++#include "Extension/Factory.h"
+ 
++#define ADTS_HEADER_LEN 7
+ #define MAX_DELAY_SECOND 3
+ 
+ using namespace std;
+ using namespace toolkit;
+ 
+ namespace mediakit {
++extern int dumpAacConfig(const string &config, size_t length, uint8_t *out, size_t out_size);
+ 
+ static string ffmpeg_err(int errnum) {
+     char errbuf[AV_ERROR_MAX_STRING_SIZE];
+@@ -61,6 +66,9 @@ static bool setupFFmpeg_l() {
+ #if (LIBAVCODEC_VERSION_MAJOR < 58)
+     avcodec_register_all();
+ #endif
++    InfoL << "libavcodec " << LIBAVCODEC_VERSION_MAJOR << "." << LIBAVCODEC_VERSION_MINOR;
++    //InfoL << "libavformat " << LIBAVFORMAT_VERSION_MAJOR << "." << LIBAVFORMAT_VERSION_MINOR;
++    InfoL << "libavutil " << LIBAVUTIL_VERSION_MAJOR << "." << LIBAVUTIL_VERSION_MAJOR;
+     return true;
+ }
+ 
+@@ -444,8 +452,6 @@ FFmpegDecoder::FFmpegDecoder(const Track::Ptr &track, int thread_num, const std:
+                 _context->sample_rate = audio->getAudioSampleRate();
+                 break;
+             }
+-            default:
+-                break;
+         }
+         AVDictionary *dict = nullptr;
+         if (thread_num <= 0) {
+@@ -515,10 +521,6 @@ void FFmpegDecoder::flush() {
+     }
+ }
+ 
+-const AVCodecContext *FFmpegDecoder::getContext() const {
+-    return _context.get();
+-}
+-
+ bool FFmpegDecoder::inputFrame_l(const Frame::Ptr &frame, bool live, bool enable_merge) {
+     if (_do_merger && enable_merge) {
+         return _merger.inputFrame(frame, [this, live](uint64_t dts, uint64_t pts, const Buffer::Ptr &buffer, bool have_idr) {
+@@ -600,6 +602,91 @@ void FFmpegDecoder::onDecode(const FFmpegFrame::Ptr &frame) {
+     }
+ }
+ 
++////////////////////////////////////////////////////////////////////////////////////////////////////////////
++FFmpegAudioFifo::~FFmpegAudioFifo() {
++    if (_fifo) {
++        av_audio_fifo_free(_fifo);
++        _fifo = nullptr;
++    }
++}
++
++int FFmpegAudioFifo::size() const {
++    return _fifo ? av_audio_fifo_size(_fifo) : 0;
++}
++
++bool FFmpegAudioFifo::Write(const AVFrame *frame) {
++    _format = (AVSampleFormat)frame->format;
++#if LIBAVCODEC_VERSION_INT >= FF_CODEC_VER_7_1
++    int channels = frame->ch_layout.nb_channels;
++#else
++    int channels = frame->channels;
++#endif
++    if (!_fifo) {
++        _fifo = av_audio_fifo_alloc(_format, channels, frame->nb_samples);
++        if (!_fifo) {
++            WarnL << "av_audio_fifo_alloc " << channels << "x" << frame->nb_samples << "error";
++            return false;
++        }
++    }
++
++    _channels = channels;
++    if (_samplerate != frame->sample_rate) {
++        _samplerate = frame->sample_rate;
++        // 假定传入frame的时间戳是以ms为单位的
++        _timebase = 1000.0 / _samplerate;
++    }
++    if (frame->pts != AV_NOPTS_VALUE) {
++        // 计算fifo audio第一个采样的时间戳
++        double tsp = frame->pts - _timebase * av_audio_fifo_size(_fifo);
++        // flv.js和webrtc对音频时间戳增量有要求, rtc要求更加严格！
++        // 得尽量保证时间戳是按照sample_size累加，否则容易出现破音或杂音等问题
++        if (fabs(_tsp) < DBL_EPSILON || fabs(tsp - _tsp) > 200) {
++            InfoL << "reset base_tsp " << (int64_t)_tsp << "->" << (int64_t)tsp;
++            _tsp = tsp;
++        }
++    } else {
++        _tsp = 0;
++    }
++
++    av_audio_fifo_write(_fifo, (void **)frame->data, frame->nb_samples);
++    return true;
++}
++
++bool FFmpegAudioFifo::Read(AVFrame *frame, int sample_size) {
++    assert(_fifo);
++    int fifo_size = av_audio_fifo_size(_fifo);
++    if (fifo_size < sample_size)
++        return false;
++    // fill linedata
++    av_samples_get_buffer_size(frame->linesize, _channels, sample_size, _format, 0);
++    frame->nb_samples = sample_size;
++    frame->format = _format;
++#if LIBAVCODEC_VERSION_INT >= FF_CODEC_VER_7_1
++    av_channel_layout_default(&frame->ch_layout, _channels);
++#else   
++    frame->channel_layout = av_get_default_channel_layout(_channels);
++    frame->channels = _channels;
++#endif
++    frame->sample_rate = _samplerate;
++    if (fabs(_tsp) > DBL_EPSILON) {
++        frame->pts = _tsp;
++        // advance tsp by sample_size
++        _tsp += sample_size * _timebase;
++    }
++    else {
++        frame->pts = AV_NOPTS_VALUE;
++    }
++
++    int ret = av_frame_get_buffer(frame, 0);
++    if (ret < 0) {
++        WarnL << "av_frame_get_buffer error " << ffmpeg_err(ret);
++        return false;
++    }
++
++    av_audio_fifo_read(_fifo, (void **)frame->data, sample_size);
++    return true;
++}
++
+ ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+ #if LIBAVCODEC_VERSION_INT >= FF_CODEC_VER_7_1
+ FFmpegSwr::FFmpegSwr(AVSampleFormat output, AVChannelLayout *ch_layout, int samplerate) {
+@@ -885,5 +972,294 @@ std::tuple<bool, std::string> FFmpegUtils::saveFrame(const FFmpegFrame::Ptr &fra
+     return make_tuple<bool, std::string>(true, "");
+ }
+ 
+-} // namespace mediakit
+-#endif // ENABLE_FFMPEG
++void setupContext(AVCodecContext *_context, int bitrate) {
++    //保存AVFrame的引用
++#ifdef FF_API_OLD_ENCDEC
++    _context->refcounted_frames = 1;
++#endif
++    _context->flags |= AV_CODEC_FLAG_LOW_DELAY;
++    _context->flags2 |= AV_CODEC_FLAG2_FAST;
++    _context->strict_std_compliance = FF_COMPLIANCE_EXPERIMENTAL;
++    _context->time_base.num = 1;
++    _context->time_base.den = 1000; // {1, 1000}
++    _context->bit_rate = bitrate;
++}
++
++FFmpegEncoder::FFmpegEncoder(const Track::Ptr &track, int thread_num) {
++    setupFFmpeg();
++    const AVCodec *codec = nullptr;
++    const AVCodec *codec_default = nullptr;
++    _codecId = track->getCodecId();
++    switch (_codecId) {
++    case CodecH264:
++        codec_default = getCodec<false>({ AV_CODEC_ID_H264 });
++        if (checkIfSupportedNvidia()) {
++            codec = getCodec<false>({ { "libopenh264" },
++                                      { AV_CODEC_ID_H264 },
++                                      { "h264_qsv" },
++                                      { "h264_videotoolbox" },
++                                      { "h264_cuvid" },
++                                      { "h264_nvmpi" } });
++        } else {
++            codec = getCodec<false>({ { "libopenh264" }, { AV_CODEC_ID_H264 }, { "h264_qsv" }, { "h264_videotoolbox" }, { "h264_nvmpi" } });
++        }
++        break;
++    case CodecH265:
++        codec_default = getCodec<false>({ AV_CODEC_ID_HEVC });
++        if (checkIfSupportedNvidia()) {
++            codec = getCodec<false>({ { AV_CODEC_ID_HEVC }, { "hevc_qsv" }, { "hevc_videotoolbox" }, { "hevc_cuvid" }, { "hevc_nvmpi" } });
++        } else {
++            codec = getCodec<false>({ { AV_CODEC_ID_HEVC }, { "hevc_qsv" }, { "hevc_videotoolbox" }, { "hevc_nvmpi" } });
++        }
++        break;
++    case CodecAAC:
++        codec = getCodec<false>({ AV_CODEC_ID_AAC });
++        break;
++    case CodecG711A:
++        codec = getCodec<false>({ AV_CODEC_ID_PCM_ALAW });
++        break;
++    case CodecG711U:
++        codec = getCodec<false>({ AV_CODEC_ID_PCM_MULAW });
++        break;
++    case CodecOpus:
++        codec = getCodec<false>({ AV_CODEC_ID_OPUS });
++        break;
++    case CodecVP8:
++        codec = getCodec<false>({ AV_CODEC_ID_VP8 });
++        break;
++    case CodecVP9:
++        codec = getCodec<false>({ AV_CODEC_ID_VP9 });
++        break;
++    default:
++        break;
++    }
++
++    if (!codec) {
++        throw std::runtime_error("未找到编码器");
++    }
++
++    if (thread_num <= 0) {
++        av_dict_set(&_dict, "threads", "auto", 0);
++    } else {
++        av_dict_set(&_dict, "threads", to_string(MIN(thread_num, thread::hardware_concurrency())).data(), 0);
++    }
++    av_dict_set(&_dict, "zerolatency", "1", 0);
++    if (strcmp(codec->name, "libx264") == 0 || strcmp(codec->name, "libx265") == 0) {
++        av_dict_set(&_dict, "preset", "ultrafast", 0);
++    }
++
++    while (true) {
++        bool ret = false;
++        if (getTrackType() == TrackVideo) {
++            // 不设置时，仅第一个I帧前存一次sps和pps
++            // 设置后，I帧钱不会存储sps和pps, 但_context->extradata会有数据，需要手动处理
++            // _context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
++            VideoTrack::Ptr video = static_pointer_cast<VideoTrack>(track);
++            ret = openVideoCodec(video->getVideoWidth(), video->getVideoHeight(), track->getBitRate(), codec);
++        } else {
++            AudioTrack::Ptr audio = static_pointer_cast<AudioTrack>(track);
++            ret = openAudioCodec(audio->getAudioSampleRate(), audio->getAudioChannel(), track->getBitRate(), codec);
++        }
++
++        if (ret) {
++            _codec = codec;
++            //成功
++            InfoL << "打开编码器成功:" << codec->name << ", frameSize " << _context->frame_size;
++            // we do not send complete frames, check this
++            if (getTrackType() == TrackAudio) {
++                var_frame_size = codec->capabilities & AV_CODEC_CAP_VARIABLE_FRAME_SIZE;
++                if (var_frame_size) {
++                    InfoL << codec->name << " support var frame_size";
++                }
++            }
++            break;
++        }
++
++        if (codec_default && codec_default != codec) {
++            //硬件编解码器打开失败，尝试软件的
++            WarnL << "打开编码器" << codec->name << "失败，原因是:" << ffmpeg_err(ret) << ", 再尝试打开编码器"
++                  << codec_default->name;
++            codec = codec_default;
++            continue;
++        }
++        throw std::runtime_error(StrPrinter << "打开编码器" << codec->name << "失败:" << ffmpeg_err(ret));
++    }
++}
++
++FFmpegEncoder::~FFmpegEncoder() {
++    stopThread(true);
++    flush();
++    av_dict_free(&_dict);
++}
++
++bool FFmpegEncoder::openVideoCodec(int width, int height, int bitrate, const AVCodec *codec) {
++    _context.reset(avcodec_alloc_context3(codec), [](AVCodecContext *ctx) { avcodec_free_context(&ctx); });
++    if (_context) {
++        setupContext(_context.get(), bitrate);
++
++        // 不设置时，仅第一个I帧前存一次sps和pps
++        // 设置后，I帧钱不会存储sps和pps, 但_context->extradata会有数据，需要手动处理
++        // _context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
++        _context->width = width;
++        _context->height = height;
++        // gop
++        _context->gop_size = 200;
++        // 禁用b帧
++        _context->max_b_frames = 0;
++        _context->has_b_frames = 0;
++        InfoL << "openVideoCodec " << codec->name << " " << _context->width << "x" << _context->height;
++        _context->pix_fmt = AV_PIX_FMT_YUV420P; // codec->pix_fmts[0];
++        // sws_.reset(new FFmpegSws(_context->pix_fmt, _context->width, _context->height));
++        return avcodec_open2(_context.get(), codec, &_dict) >= 0;
++    }
++    return false;
++}
++
++bool FFmpegEncoder::openAudioCodec(int samplerate, int channel, int bitrate, const AVCodec *codec) {
++    _context.reset(avcodec_alloc_context3(codec), [](AVCodecContext *ctx) { avcodec_free_context(&ctx); });
++
++    if (_context) {
++        setupContext(_context.get(), bitrate);
++
++        _context->sample_fmt = codec->sample_fmts[0];
++        _context->sample_rate = samplerate;
++#if LIBAVCODEC_VERSION_INT >= FF_CODEC_VER_7_1
++        av_channel_layout_default(&_context->ch_layout, channel);
++        _swr.reset(new FFmpegSwr(_context->sample_fmt, &_context->ch_layout, _context->sample_rate));
++#else
++        _context->channels = channel;
++        _context->channel_layout = av_get_default_channel_layout(_context->channels);
++        _swr.reset(new FFmpegSwr(_context->sample_fmt, _context->channels, _context->channel_layout, _context->sample_rate));
++#endif        
++
++        if (getCodecId() == CodecOpus)
++            _context->compression_level = 1;
++
++        //_sample_bytes = av_get_bytes_per_sample(_context->sample_fmt) * _context->channels;
++        InfoL << "openAudioCodec " << codec->name << " " << _context->sample_rate << "x" << channel;
++        return avcodec_open2(_context.get(), codec, &_dict) >= 0;
++    }
++    return false;
++}
++
++void FFmpegEncoder::flush() {
++    while (true) {
++        auto packet = alloc_av_packet();
++        auto ret = avcodec_receive_packet(_context.get(), packet.get());
++        if (ret == AVERROR(EAGAIN)) {
++            avcodec_send_frame(_context.get(), nullptr);
++            continue;
++        }
++        if (ret == AVERROR_EOF) {
++            break;
++        }
++        if (ret < 0) {
++            WarnL << "avcodec_receive_frame failed:" << ffmpeg_err(ret);
++            break;
++        }
++        onEncode(packet.get());
++    }
++}
++
++bool FFmpegEncoder::inputFrame(const FFmpegFrame::Ptr &frame, bool async) {
++    if (async && !TaskManager::isEnabled() && getContext()->codec_type == AVMEDIA_TYPE_VIDEO) {
++        //开启异步编码，且为视频，尝试启动异步解码线程
++        startThread("encoder thread");
++    }
++
++    if (!async || !TaskManager::isEnabled()) {
++        return inputFrame_l(frame);
++    }
++
++    return addEncodeTask([this, frame]() { inputFrame_l(frame); });
++}
++
++bool FFmpegEncoder::inputFrame_l(FFmpegFrame::Ptr input) {
++    AVFrame *frame = input->get();
++    AVCodecContext *context = _context.get();
++    if (getTrackType() == TrackAudio) {
++        if (_swr) {
++            // 转成同样采样率和通道
++            input = _swr->inputFrame(input);
++            frame = input->get();
++            // 保证每次塞给解码器的都是一帧音频
++            if (!var_frame_size && _context->frame_size && frame->nb_samples != _context->frame_size) {
++                // add this frame to _audio_buffer
++                if (!_fifo)
++                    _fifo.reset(new FFmpegAudioFifo());
++                // TraceL << "in " << frame->pts << ",samples " << frame->nb_samples;
++                _fifo->Write(frame);
++                while (1) {
++                    FFmpegFrame audio_frame;
++                    if (!_fifo->Read(audio_frame.get(), _context->frame_size)){
++                        break;
++                    }
++                    if (!encodeFrame(audio_frame.get())) {
++                        break;
++                    }
++                }
++                return true;
++            }
++        }
++    } else {
++        if (frame->format != context->pix_fmt || frame->width != context->width || frame->height != context->height) {
++            if (_sws) {
++                input = _sws->inputFrame(input);
++                frame = input->get();
++            } else {
++                // @todo reopen videocodec?
++                openVideoCodec(frame->width, frame->height, 512000, _codec);
++            }
++        }
++    }
++    return encodeFrame(frame);
++}
++
++bool FFmpegEncoder::encodeFrame(AVFrame *frame) {
++    // TraceL << "enc " << frame->pts;
++    int ret = avcodec_send_frame(_context.get(), frame);
++    if (ret < 0) {
++        WarnL << "Error sending a frame " << frame->pts << " to the encoder: " << ffmpeg_err(ret);
++        return false;
++    }
++    while (ret >= 0) {
++        auto packet = alloc_av_packet();
++        ret = avcodec_receive_packet(_context.get(), packet.get());
++        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
++            break;
++        else if (ret < 0) {
++            WarnL << "Error encoding a frame: " << ffmpeg_err(ret);
++            return false;
++        }
++        // TraceL << "out " << packet->pts << "," << packet->dts << ", size: " << packet->size;
++        onEncode(packet.get());
++    }
++    return true;
++}
++
++void FFmpegEncoder::onEncode(AVPacket *packet) {
++    // process frame
++    if (!_cb)
++        return;
++    if (_codecId == CodecAAC) {
++        auto frame = FrameImp::create<>();
++        frame->_codec_id = _codecId;
++        frame->_dts = packet->dts;
++        frame->_pts = packet->pts;
++        frame->_buffer.reserve(ADTS_HEADER_LEN + packet->size);
++        if (_context && _context->extradata && _context->extradata_size) {
++            uint8_t adts[ADTS_HEADER_LEN];
++            auto cfg = std::string((const char *)_context->extradata, _context->extradata_size);
++            dumpAacConfig(cfg, packet->size, adts, ADTS_HEADER_LEN);
++            frame->_prefix_size = ADTS_HEADER_LEN;
++            frame->_buffer.append((char*)adts, ADTS_HEADER_LEN);
++        }
++        frame->_buffer.append((const char *)packet->data, packet->size);
++        _cb(frame);
++    } else {
++        _cb(Factory::getFrameFromPtr(_codecId, (const char*)packet->data, packet->size, packet->dts, packet->pts));
++    }
++}
++
++} //namespace mediakit
++#endif//ENABLE_FFMPEG
+diff --git a/src/Codec/Transcode.h b/src/Codec/Transcode.h
+index 240806a2..de857fa0 100644
+--- a/src/Codec/Transcode.h
++++ b/src/Codec/Transcode.h
+@@ -84,6 +84,24 @@ private:
+     toolkit::ResourcePool<FFmpegFrame> _swr_frame_pool;
+ };
+ 
++class FFmpegAudioFifo {
++public:
++    FFmpegAudioFifo() = default;
++    ~FFmpegAudioFifo();
++
++    bool Write(const AVFrame *frame);
++    bool Read(AVFrame *frame, int sample_size);
++    int size() const;
++
++private:
++    int _channels = 0;
++    int _samplerate = 0;
++    double _tsp = 0;
++    double _timebase = 0;
++    AVAudioFifo *_fifo = nullptr;
++    AVSampleFormat _format = AV_SAMPLE_FMT_NONE;
++};
++
+ class TaskManager {
+ public:
+     virtual ~TaskManager();
+@@ -127,7 +145,7 @@ public:
+     bool inputFrame(const Frame::Ptr &frame, bool live, bool async, bool enable_merge = true);
+     void setOnDecode(onDec cb);
+     void flush();
+-    const AVCodecContext *getContext() const;
++    const AVCodecContext *getContext() const { return _context.get(); }
+ 
+ private:
+     void onDecode(const FFmpegFrame::Ptr &frame);
+@@ -181,6 +199,41 @@ public:
+     static std::tuple<bool, std::string> saveFrame(const FFmpegFrame::Ptr &frame, const char *filename, AVPixelFormat fmt = AV_PIX_FMT_YUVJ420P, int w = 0, int h = 0, const char *font_path = nullptr);
+ };
+ 
++class FFmpegEncoder : public TaskManager, public CodecInfo {
++public:
++    using Ptr = std::shared_ptr<FFmpegEncoder>;
++    using onEnc = std::function<void(const Frame::Ptr &)>;
++
++    FFmpegEncoder(const Track::Ptr &track, int thread_num = 2);
++    ~FFmpegEncoder() override;
++
++    void flush();
++    CodecId getCodecId() const override { return _codecId; }
++    const AVCodecContext *getContext() const { return _context.get(); }
++
++    void setOnEncode(onEnc cb) { _cb = std::move(cb); }
++    bool inputFrame(const FFmpegFrame::Ptr &frame, bool async);
++
++private:
++    bool inputFrame_l(FFmpegFrame::Ptr frame);
++    bool encodeFrame(AVFrame *frame);
++    void onEncode(AVPacket *packet);
++    bool openVideoCodec(int width, int height, int bitrate, const AVCodec *codec);
++    bool openAudioCodec(int samplerate, int channel, int bitrate, const AVCodec *codec);
++
++private:
++    onEnc _cb;
++    CodecId _codecId;
++    const AVCodec *_codec = nullptr;
++    AVDictionary *_dict = nullptr;
++    std::shared_ptr<AVCodecContext> _context;
++
++    std::unique_ptr<FFmpegSws> _sws;
++    std::unique_ptr<FFmpegSwr> _swr;
++    std::unique_ptr<FFmpegAudioFifo> _fifo;
++    bool var_frame_size = false;
++};
++
+ }//namespace mediakit
+ #endif// ENABLE_FFMPEG
+ #endif //ZLMEDIAKIT_TRANSCODE_H
+diff --git a/src/Common/MediaSink.cpp b/src/Common/MediaSink.cpp
+index 7da389d6..cec1841c 100644
+--- a/src/Common/MediaSink.cpp
++++ b/src/Common/MediaSink.cpp
+@@ -279,10 +279,60 @@ static uint8_t s_mute_adts[] = {0xff, 0xf1, 0x6c, 0x40, 0x2d, 0x3f, 0xfc, 0x00,
+                                 0x39, 0x1a, 0x77, 0x92, 0x9b, 0xff, 0xc6, 0xae, 0xf8, 0x36, 0xba, 0xa8, 0xaa, 0x6b, 0x1e, 0x8c,
+                                 0xc5, 0x97, 0x39, 0x6a, 0xb8, 0xa2, 0x55, 0xa8, 0xf8};
+ 
+-#define MUTE_ADTS_DATA s_mute_adts
+-#define MUTE_ADTS_DATA_MS 128
++static uint8_t opus_silence[] = {
++  0xf8, 0xff, 0xfe, 0x00, 0x00, 0x00, 0x00, 0x00,
++  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
++  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
++  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
++  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
++  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
++  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
++  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
++  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
++  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
++};
++static uint8_t g711_silence[160] = { 0 };
+ static uint8_t ADTS_CONFIG[2] = { 0x15, 0x88 };
+ 
++MuteAudioMaker::MuteAudioMaker(CodecId codec /*= CodecAAC*/) : _codec(codec)
++{
++    switch (codec)
++    {
++    case CodecAAC:
++        _frame_ms = 128;
++        break;
++    case CodecOpus:
++        _frame_ms = 20;
++        break;
++    case CodecG711A:
++    case CodecG711U:
++        _frame_ms = 20;
++        break;
++    default:
++        _frame_ms = 0;
++        break;
++    }
++}
++
++Frame::Ptr MuteAudioMaker::makeSlienceFrame(int64_t dts) {
++    switch (_codec)
++    {
++    case CodecAAC:
++        return std::make_shared<FrameToCache<FrameFromPtr>>(_codec, (char*)s_mute_adts, sizeof(s_mute_adts),
++            dts, 0, 7);
++        break;
++    case CodecOpus:
++        return std::make_shared<FrameToCache<FrameFromPtr>>(_codec, (char*)opus_silence, sizeof(opus_silence),
++            dts, 0, 0);
++    case CodecG711A:
++    case CodecG711U:
++        return std::make_shared<FrameToCache<FrameFromPtr>>(_codec, (char*)g711_silence, sizeof(g711_silence),
++            dts, 0, 0);
++    default:
++        return nullptr;
++    }
++}
++
+ bool MuteAudioMaker::inputFrame(const Frame::Ptr &frame) {
+     if (_track_index == -1) {
+         // 锁定track  [AUTO-TRANSLATED:41aff35e]
+@@ -294,12 +344,14 @@ bool MuteAudioMaker::inputFrame(const Frame::Ptr &frame) {
+         // Not a locked track
+         return false;
+     }
+-    auto audio_idx = frame->dts() / MUTE_ADTS_DATA_MS;
+-    if (_audio_idx != audio_idx) {
+-        _audio_idx = audio_idx;
+-        auto aacFrame = std::make_shared<FrameToCache<FrameFromPtr>>(CodecAAC, (char *)MUTE_ADTS_DATA, sizeof(s_mute_adts), _audio_idx * MUTE_ADTS_DATA_MS, 0, 7);
+-        aacFrame->setIndex(MUTE_AUDIO_INDEX);
+-        return FrameDispatcher::inputFrame(aacFrame);
++    if (frame->getTrackType() == TrackVideo && _frame_ms > 0) {
++        auto audio_idx = frame->dts() / _frame_ms;
++        if (_audio_idx != audio_idx) {
++            _audio_idx = audio_idx;
++            auto frame = makeSlienceFrame(_audio_idx * _frame_ms);
++			frame->setIndex(MUTE_AUDIO_INDEX);
++            return FrameDispatcher::inputFrame(frame);
++        }
+     }
+     return false;
+ }
+diff --git a/src/Common/MediaSink.h b/src/Common/MediaSink.h
+index da517ff3..809a84d4 100644
+--- a/src/Common/MediaSink.h
++++ b/src/Common/MediaSink.h
+@@ -63,13 +63,18 @@ public:
+  
+  * [AUTO-TRANSLATED:aa154f71]
+  */
+-class MuteAudioMaker : public FrameDispatcher {
++class MuteAudioMaker : public FrameDispatcher, public CodecInfo {
+ public:
+     using Ptr = std::shared_ptr<MuteAudioMaker>;
++    MuteAudioMaker(CodecId codec = CodecAAC);
++    ~MuteAudioMaker() override = default;
+     bool inputFrame(const Frame::Ptr &frame) override;
+-
++    Frame::Ptr makeSlienceFrame(int64_t dts);
++    CodecId getCodecId() const override { return _codec; }
+ private:
+     int _track_index = -1;
++    CodecId _codec;
++    int _frame_ms = 0;
+     uint64_t _audio_idx = 0;
+ };
+ 
+@@ -177,7 +182,10 @@ public:
+      * [AUTO-TRANSLATED:49efef10]
+      */
+     void enableMuteAudio(bool flag);
+-
++    bool hasMuteAudio() const { return _mute_audio_maker != nullptr; }
++    bool isMuteCodec(CodecId codec) const {
++        return _mute_audio_maker && codec == _mute_audio_maker->getCodecId();
++    }
+     /**
+      * 是否有视频track
+      * Whether there is a video track
+diff --git a/src/Common/MediaSource.h b/src/Common/MediaSource.h
+index 8abdfcd4..b474771f 100644
+--- a/src/Common/MediaSource.h
++++ b/src/Common/MediaSource.h
+@@ -236,8 +236,8 @@ public:
+     // 是否开启MP4录制  [AUTO-TRANSLATED:0157b014]
+     // Whether to enable MP4 recording
+     bool enable_mp4;
+-    // 是否开启转换为rtsp/webrtc  [AUTO-TRANSLATED:0711cb18]
+-    // Whether to enable conversion to rtsp/webrtc
++    // 是否开启转换为rtsp  [AUTO-TRANSLATED:0711cb18]
++    // Whether to enable conversion to rtsp
+     bool enable_rtsp;
+     // 是否开启转换为rtmp/flv  [AUTO-TRANSLATED:d4774119]
+     // Whether to enable conversion to rtmp/flv
+@@ -248,7 +248,11 @@ public:
+     // 是否开启转换为http-fmp4/ws-fmp4  [AUTO-TRANSLATED:8c96e1e4]
+     // Whether to enable conversion to http-fmp4/ws-fmp4
+     bool enable_fmp4;
+-
++    //是否开启转换为webrtc
++    bool enable_rtc;
++    // 是否启用音频转码
++    bool audio_transcode;
++    bool rtc_demand;
+     // hls协议是否按需生成，如果hls.segNum配置为0(意味着hls录制)，那么hls将一直生成(不管此开关)  [AUTO-TRANSLATED:4653b411]
+     // Whether to generate hls protocol on demand, if hls.segNum is configured to 0 (meaning hls recording), then hls will always be generated (regardless of this switch)
+     bool hls_demand;
+@@ -302,7 +306,9 @@ public:
+         XX(enable_rtmp)         \
+         XX(enable_ts)           \
+         XX(enable_fmp4)         \
+-                                \
++        XX(enable_rtc)          \
++        XX(audio_transcode)     \
++        XX(rtc_demand)          \
+         XX(hls_demand)          \
+         XX(rtsp_demand)         \
+         XX(rtmp_demand)         \
+diff --git a/src/Common/MultiMediaSourceMuxer.cpp b/src/Common/MultiMediaSourceMuxer.cpp
+index a702eac3..7a3c8ed9 100644
+--- a/src/Common/MultiMediaSourceMuxer.cpp
++++ b/src/Common/MultiMediaSourceMuxer.cpp
+@@ -12,7 +12,16 @@
+ #include "Common/config.h"
+ #include "MultiMediaSourceMuxer.h"
+ #include "Thread/WorkThreadPool.h"
+-
++#include "Rtp/RtpSender.h"
++#include "Record/HlsRecorder.h"
++#include "Record/HlsMediaSource.h"
++#include "Rtsp/RtspMediaSourceMuxer.h"
++#include "Rtmp/RtmpMediaSourceMuxer.h"
++#include "TS/TSMediaSourceMuxer.h"
++#include "FMP4/FMP4MediaSourceMuxer.h"
++#if defined(ENABLE_WEBRTC)
++#include "webrtc/RtcMediaSource.h"
++#endif
+ using namespace std;
+ using namespace toolkit;
+ 
+@@ -250,6 +259,11 @@ MultiMediaSourceMuxer::MultiMediaSourceMuxer(const MediaTuple& tuple, float dur_
+     if (option.enable_rtsp) {
+         _rtsp = std::make_shared<RtspMediaSourceMuxer>(_tuple, option, std::make_shared<TitleSdp>(dur_sec));
+     }
++    if (option.enable_rtc) {
++#if defined(ENABLE_WEBRTC)
++        _rtc = std::make_shared<RtcMediaSourceMuxer>(_tuple, option, std::make_shared<TitleSdp>(dur_sec));
++#endif
++    }
+     if (option.enable_hls) {
+         _hls = dynamic_pointer_cast<HlsRecorder>(Recorder::createRecorder(Recorder::type_hls, _tuple, option));
+     }
+@@ -262,6 +276,7 @@ MultiMediaSourceMuxer::MultiMediaSourceMuxer(const MediaTuple& tuple, float dur_
+     if (option.enable_ts) {
+         _ts = dynamic_pointer_cast<TSMediaSourceMuxer>(Recorder::createRecorder(Recorder::type_ts, _tuple, option));
+     }
++
+     if (option.enable_fmp4) {
+         _fmp4 = dynamic_pointer_cast<FMP4MediaSourceMuxer>(Recorder::createRecorder(Recorder::type_fmp4, _tuple, option));
+     }
+@@ -289,6 +304,10 @@ void MultiMediaSourceMuxer::setMediaListener(const std::weak_ptr<MediaSourceEven
+     if (_ts) {
+         _ts->setListener(self);
+     }
++    if (_rtc) {
++        _rtc->setListener(self);
++    }
++
+     if (_fmp4) {
+         _fmp4->setListener(self);
+     }
+@@ -307,6 +326,7 @@ void MultiMediaSourceMuxer::setTrackListener(const std::weak_ptr<Listener> &list
+ int MultiMediaSourceMuxer::totalReaderCount() const {
+     return (_rtsp ? _rtsp->readerCount() : 0) +
+            (_rtmp ? _rtmp->readerCount() : 0) +
++           (_rtc ? _rtc->readerCount() : 0) +
+            (_ts ? _ts->readerCount() : 0) +
+            (_fmp4 ? _fmp4->readerCount() : 0) +
+            (_mp4 ? _option.mp4_as_player : 0) +
+@@ -711,15 +731,14 @@ bool MultiMediaSourceMuxer::onTrackReady(const Track::Ptr &track) {
+     }
+ 
+     bool ret = false;
+-    if (_rtmp) {
+-        ret = _rtmp->addTrack(track) ? true : ret;
+-    }
+-    if (_rtsp) {
+-        ret = _rtsp->addTrack(track) ? true : ret;
+-    }
+-    if (_ts) {
+-        ret = _ts->addTrack(track) ? true : ret;
+-    }
++    if (_rtc && !isMuteCodec(track->getCodecId()))
++        ret = _rtc->addTrack(track);
++    if (_rtmp && _rtmp->addTrack(track))
++        ret = true;
++    if (_rtsp && _rtsp->addTrack(track))
++        ret = true;
++    if (_ts && _ts->addTrack(track))
++        ret = true;
+     if (_fmp4) {
+         ret = _fmp4->addTrack(track) ? true : ret;
+     }
+@@ -767,6 +786,9 @@ void MultiMediaSourceMuxer::onAllTrackReady() {
+     if (_fmp4) {
+         _fmp4->addTrackCompleted();
+     }
++    if (_rtc) {
++        _rtc->addTrackCompleted();
++    }
+     if (_hls) {
+         _hls->addTrackCompleted();
+     }
+@@ -824,6 +846,9 @@ void MultiMediaSourceMuxer::resetTracks() {
+     if (_ts) {
+         _ts->resetTracks();
+     }
++    if (_rtc) {
++        _rtc->resetTracks();
++    }
+     if (_fmp4) {
+         _fmp4->resetTracks();
+     }
+@@ -880,18 +905,23 @@ bool MultiMediaSourceMuxer::onTrackFrame(const Frame::Ptr &frame_in) {
+ bool MultiMediaSourceMuxer::onTrackFrame_l(const Frame::Ptr &frame_in) {
+     auto frame = frame_in;
+     bool ret = false;
+-    if (_rtmp) {
+-        ret = _rtmp->inputFrame(frame) ? true : ret;
+-    }
+-    if (_rtsp) {
+-        ret = _rtsp->inputFrame(frame) ? true : ret;
+-    }
+-    if (_ts) {
+-        ret = _ts->inputFrame(frame) ? true : ret;
+-    }
++    if (_rtc && !isMuteCodec(frame->getCodecId()))
++      ret = _rtc->inputFrame(frame);
+ 
+-    if (_hls) {
+-        ret = _hls->inputFrame(frame) ? true : ret;
++    if (_rtmp && _rtmp->inputFrame(frame))
++      ret = true;
++
++    if (_rtsp && _rtsp->inputFrame(frame))
++        ret =  true;
++
++    if (_ts && _ts->inputFrame(frame))
++        ret = true;
++
++    //拷贝智能指针，目的是为了防止跨线程调用设置录像相关api导致的线程竞争问题
++    //此处使用智能指针拷贝来确保线程安全，比互斥锁性能更优
++    auto hls = _hls;
++    if (hls) {
++        ret = hls->inputFrame(frame) ? true : ret;
+     }
+ 
+     if (_hls_fmp4) {
+@@ -937,6 +967,7 @@ bool MultiMediaSourceMuxer::isEnabled(){
+         // When someone is watching, check again after a certain delay to see if no one is watching (save performance)
+         _is_enable = (_rtmp ? _rtmp->isEnabled() : false) ||
+                      (_rtsp ? _rtsp->isEnabled() : false) ||
++                     (_rtc ? _rtc->isEnabled() : false) ||
+                      (_ts ? _ts->isEnabled() : false) ||
+                      (_fmp4 ? _fmp4->isEnabled() : false) ||
+                      (_ring ? (bool)_ring->readerCount() : false)  ||
+diff --git a/src/Common/MultiMediaSourceMuxer.h b/src/Common/MultiMediaSourceMuxer.h
+index 2da3e4b0..d6b39275 100644
+--- a/src/Common/MultiMediaSourceMuxer.h
++++ b/src/Common/MultiMediaSourceMuxer.h
+@@ -15,15 +15,15 @@
+ #include "Common/MediaSource.h"
+ #include "Common/MediaSink.h"
+ #include "Record/Recorder.h"
+-#include "Rtp/RtpSender.h"
+-#include "Record/HlsRecorder.h"
+-#include "Record/HlsMediaSource.h"
+-#include "Rtsp/RtspMediaSourceMuxer.h"
+-#include "Rtmp/RtmpMediaSourceMuxer.h"
+-#include "TS/TSMediaSourceMuxer.h"
+-#include "FMP4/FMP4MediaSourceMuxer.h"
+-
++#include "Util/RingBuffer.h"
+ namespace mediakit {
++class HlsRecorder;
++class HlsFMP4Recorder;
++class RtspMediaSourceMuxer;
++class RtmpMediaSourceMuxer;
++class TSMediaSourceMuxer;
++class FMP4MediaSourceMuxer;
++class RtpSender;
+ 
+ struct FrameInfo {
+     CodecId codec_id = CodecInvalid;
+@@ -249,13 +249,14 @@ private:
+ #if defined(ENABLE_RTPPROXY)
+     std::unordered_multimap<std::string, std::tuple<RingType::RingReader::Ptr, std::weak_ptr<RtpSender>>> _rtp_sender;
+ #endif // ENABLE_RTPPROXY
+-    FMP4MediaSourceMuxer::Ptr _fmp4;
+-    RtmpMediaSourceMuxer::Ptr _rtmp;
+-    RtspMediaSourceMuxer::Ptr _rtsp;
+-    TSMediaSourceMuxer::Ptr _ts;
++    std::shared_ptr<FMP4MediaSourceMuxer> _fmp4;
++    std::shared_ptr<RtmpMediaSourceMuxer> _rtmp;
++    std::shared_ptr<RtspMediaSourceMuxer> _rtsp;
++    std::shared_ptr<TSMediaSourceMuxer> _ts;
++    std::shared_ptr<RtspMediaSourceMuxer> _rtc;
+     MediaSinkInterface::Ptr _mp4;
+-    HlsRecorder::Ptr _hls;
+-    HlsFMP4Recorder::Ptr _hls_fmp4;
++    std::shared_ptr<HlsRecorder> _hls;
++    std::shared_ptr<HlsFMP4Recorder> _hls_fmp4;
+     toolkit::EventPoller::Ptr _poller;
+     RingType::Ptr _ring;
+     MediaSinkInterface::Ptr _delegate;
+diff --git a/src/Common/config.cpp b/src/Common/config.cpp
+index 8924a05b..804b97d3 100644
+--- a/src/Common/config.cpp
++++ b/src/Common/config.cpp
+@@ -106,12 +106,16 @@ const string kWaitAddTrackMS = GENERAL_FIELD "wait_add_track_ms";
+ const string kUnreadyFrameCache = GENERAL_FIELD "unready_frame_cache";
+ const string kBroadcastPlayerCountChanged = GENERAL_FIELD "broadcast_player_count_changed";
+ const string kListenIP = GENERAL_FIELD "listen_ip";
++const string kOpusBitrate = GENERAL_FIELD"opusBitrate";
++const string kAacBitrate = GENERAL_FIELD"aacBitrate";
+ 
+ static onceToken token([]() {
+     mINI::Instance()[kFlowThreshold] = 1024;
+     mINI::Instance()[kStreamNoneReaderDelayMS] = 20 * 1000;
+     mINI::Instance()[kMaxStreamWaitTimeMS] = 15 * 1000;
+     mINI::Instance()[kEnableVhost] = 0;
++    mINI::Instance()[kOpusBitrate] = 64000;
++    mINI::Instance()[kAacBitrate] = 64000;
+     mINI::Instance()[kResetWhenRePlay] = 1;
+     mINI::Instance()[kMergeWriteMS] = 0;
+     mINI::Instance()[kMediaServerId] = makeRandStr(16);
+@@ -142,6 +146,8 @@ const string kEnableRtsp = string(kFieldName) + "enable_rtsp";
+ const string kEnableRtmp = string(kFieldName) + "enable_rtmp";
+ const string kEnableTS = string(kFieldName) + "enable_ts";
+ const string kEnableFMP4 = string(kFieldName) + "enable_fmp4";
++const string kEnableRtc = string(kFieldName) + "enable_rtc";
++const string kAudioTranscode = string(kFieldName) + "audio_transcode";
+ 
+ const string kMP4AsPlayer = string(kFieldName) + "mp4_as_player";
+ const string kMP4MaxSecond = string(kFieldName) + "mp4_max_second";
+@@ -154,7 +160,7 @@ const string kRtspDemand = string(kFieldName) + "rtsp_demand";
+ const string kRtmpDemand = string(kFieldName) + "rtmp_demand";
+ const string kTSDemand = string(kFieldName) + "ts_demand";
+ const string kFMP4Demand = string(kFieldName) + "fmp4_demand";
+-
++const string kRtcDemand = string(kFieldName) + "rtc_demand";
+ static onceToken token([]() {
+     mINI::Instance()[kModifyStamp] = (int)ProtocolOption::kModifyStampRelative;
+     mINI::Instance()[kEnableAudio] = 1;
+@@ -170,6 +176,8 @@ static onceToken token([]() {
+     mINI::Instance()[kEnableRtmp] = 1;
+     mINI::Instance()[kEnableTS] = 1;
+     mINI::Instance()[kEnableFMP4] = 1;
++    mINI::Instance()[kEnableRtc] = 1;
++    mINI::Instance()[kAudioTranscode] = 1;
+ 
+     mINI::Instance()[kMP4AsPlayer] = 0;
+     mINI::Instance()[kMP4MaxSecond] = 3600;
+@@ -177,6 +185,7 @@ static onceToken token([]() {
+ 
+     mINI::Instance()[kHlsSavePath] = "./www";
+ 
++    mINI::Instance()[kRtcDemand] = 0;
+     mINI::Instance()[kHlsDemand] = 0;
+     mINI::Instance()[kRtspDemand] = 0;
+     mINI::Instance()[kRtmpDemand] = 0;
+diff --git a/src/Common/config.h b/src/Common/config.h
+index 8220e144..f7b6a485 100644
+--- a/src/Common/config.h
++++ b/src/Common/config.h
+@@ -275,6 +275,8 @@ extern const std::string kBroadcastPlayerCountChanged;
+ // 绑定的本地网卡ip  [AUTO-TRANSLATED:daa90832]
+ // Bound local network card ip
+ extern const std::string kListenIP;
++extern const std::string kOpusBitrate;
++extern const std::string kAacBitrate;
+ } // namespace General
+ 
+ namespace Protocol {
+@@ -313,8 +315,8 @@ extern const std::string kEnableHlsFmp4;
+ // 是否开启MP4录制  [AUTO-TRANSLATED:0157b014]
+ // Whether to enable MP4 recording
+ extern const std::string kEnableMP4;
+-// 是否开启转换为rtsp/webrtc  [AUTO-TRANSLATED:0711cb18]
+-// Whether to enable conversion to RTSP/WebRTC
++// 是否开启转换为rtsp  [AUTO-TRANSLATED:0711cb18]
++// Whether to enable conversion to RTSP
+ extern const std::string kEnableRtsp;
+ // 是否开启转换为rtmp/flv  [AUTO-TRANSLATED:d4774119]
+ // Whether to enable conversion to RTMP/FLV
+@@ -325,6 +327,10 @@ extern const std::string kEnableTS;
+ // 是否开启转换为http-fmp4/ws-fmp4  [AUTO-TRANSLATED:8c96e1e4]
+ // Whether to enable conversion to HTTP-FMP4/WS-FMP4
+ extern const std::string kEnableFMP4;
++//是否开启转换为webrtc
++extern const std::string kEnableRtc;
++//是否开启音频转码
++extern const std::string kAudioTranscode;
+ 
+ // 是否将mp4录制当做观看者  [AUTO-TRANSLATED:ba351230]
+ // Whether to treat MP4 recording as a viewer
+@@ -342,6 +348,7 @@ extern const std::string kHlsSavePath;
+ 
+ // 按需转协议的开关  [AUTO-TRANSLATED:9f350899]
+ // On-demand protocol conversion switch
++extern const std::string kRtcDemand;
+ extern const std::string kHlsDemand;
+ extern const std::string kRtspDemand;
+ extern const std::string kRtmpDemand;
+diff --git a/src/Rtmp/RtmpMediaSourceMuxer.h b/src/Rtmp/RtmpMediaSourceMuxer.h
+index e34bb6f7..cdb1d1f6 100644
+--- a/src/Rtmp/RtmpMediaSourceMuxer.h
++++ b/src/Rtmp/RtmpMediaSourceMuxer.h
+@@ -45,7 +45,11 @@ public:
+     int readerCount() const{
+         return _media_src->readerCount();
+     }
+-
++    bool isRegisted() const { return _is_registed; }
++    void onRegist(MediaSource& sender, bool regist) override {
++        MediaSourceEventInterceptor::onRegist(sender, regist);
++        _is_registed = regist;
++    }
+     void addTrackCompleted() override {
+         RtmpMuxer::addTrackCompleted();
+         makeConfigPacket();
+@@ -83,6 +87,7 @@ public:
+ 
+ private:
+     bool _enabled = true;
++    bool _is_registed = false;
+     bool _clear_cache = false;
+     ProtocolOption _option;
+     RtmpMediaSource::Ptr _media_src;
+diff --git a/src/Rtp/RtpSession.h b/src/Rtp/RtpSession.h
+index 25d1af91..4a060858 100644
+--- a/src/Rtp/RtpSession.h
++++ b/src/Rtp/RtpSession.h
+@@ -17,6 +17,7 @@
+ #include "RtpSplitter.h"
+ #include "RtpProcess.h"
+ #include "Util/TimeTicker.h"
++#include "Util/mini.h"
+ 
+ namespace mediakit{
+ 
+diff --git a/src/Rtsp/RtpCodec.h b/src/Rtsp/RtpCodec.h
+index 49e1ddde..b247dd46 100644
+--- a/src/Rtsp/RtpCodec.h
++++ b/src/Rtsp/RtpCodec.h
+@@ -82,6 +82,12 @@ public:
+         return _mtu_size - RtpPacket::kRtpHeaderSize;
+     }
+ 
++    uint32_t getSsrc() const {
++        return _ssrc;
++    }
++    int16_t getSeq() const {return _seq;}
++    void setSeq(int16_t seq) {_seq = seq;}
++    
+     RtpPacket::Ptr makeRtp(TrackType type,const void *data, size_t len, bool mark, uint64_t stamp);
+ 
+ private:
+diff --git a/src/Rtsp/RtspMediaSource.h b/src/Rtsp/RtspMediaSource.h
+index 8f7d6659..3ecd8968 100644
+--- a/src/Rtsp/RtspMediaSource.h
++++ b/src/Rtsp/RtspMediaSource.h
+@@ -55,7 +55,7 @@ public:
+      
+      * [AUTO-TRANSLATED:5dd23423]
+      */
+-    RtspMediaSource(const MediaTuple& tuple, int ring_size = RTP_GOP_SIZE): MediaSource(RTSP_SCHEMA, tuple), _ring_size(ring_size) {}
++    RtspMediaSource(const MediaTuple& tuple, const std::string &schema = RTSP_SCHEMA, int ring_size = RTP_GOP_SIZE): MediaSource(schema, tuple), _ring_size(ring_size) {}
+ 
+     ~RtspMediaSource() override {
+         try {
+diff --git a/src/Rtsp/RtspMediaSourceImp.cpp b/src/Rtsp/RtspMediaSourceImp.cpp
+index 34cf74d9..3837561c 100644
+--- a/src/Rtsp/RtspMediaSourceImp.cpp
++++ b/src/Rtsp/RtspMediaSourceImp.cpp
+@@ -37,7 +37,7 @@ void RtspMediaSource::onWrite(RtpPacket::Ptr rtp, bool keyPos) {
+     PacketCache<RtpPacket>::inputPacket(stamp, is_video, std::move(rtp), keyPos);
+ }
+ 
+-RtspMediaSourceImp::RtspMediaSourceImp(const MediaTuple& tuple, int ringSize): RtspMediaSource(tuple, ringSize)
++RtspMediaSourceImp::RtspMediaSourceImp(const MediaTuple& tuple, const std::string& schema, int ringSize): RtspMediaSource(tuple, schema, ringSize)
+ {
+     _demuxer = std::make_shared<RtspDemuxer>();
+     _demuxer->setTrackListener(this);
+@@ -81,7 +81,12 @@ void RtspMediaSourceImp::setProtocolOption(const ProtocolOption &option)
+     // 导致rtc无法播放，所以在rtsp推流rtc播放时，建议关闭直接代理模式  [AUTO-TRANSLATED:2c705dec]
+     // This leads to the inability of rtc to play, so it is recommended to turn off direct proxy mode when rtsp pushes the stream and rtc plays
+     _option = option;
+-    _option.enable_rtsp = !direct_proxy;
++    if (direct_proxy) {
++		if (getSchema() == RTC_SCHEMA)
++             _option.enable_rtc = false;
++		if (getSchema() == RTSP_SCHEMA)
++             _option.enable_rtsp = false;
++    }
+     _muxer = std::make_shared<MultiMediaSourceMuxer>(_tuple, _demuxer->getDuration(), _option);
+     _muxer->setMediaListener(getListener());
+     _muxer->setTrackListener(std::static_pointer_cast<RtspMediaSourceImp>(shared_from_this()));
+@@ -98,11 +103,48 @@ void RtspMediaSourceImp::setProtocolOption(const ProtocolOption &option)
+ RtspMediaSource::Ptr RtspMediaSourceImp::clone(const std::string &stream) {
+     auto tuple = _tuple;
+     tuple.stream = stream;
+-    auto src_imp = std::make_shared<RtspMediaSourceImp>(tuple);
++    auto src_imp = std::make_shared<RtspMediaSourceImp>(tuple, getSchema());
+     src_imp->setSdp(getSdp());
+     src_imp->setProtocolOption(getProtocolOption());
+     return src_imp;
+ }
+ 
++bool RtspMediaSourceImp::addTrack(const Track::Ptr &track)
++{
++    if (_muxer) {
++        if (_muxer->addTrack(track)) {
++            track->addDelegate(_muxer);
++            return true;
++        }
++    }
++    return false;
++}
++
++void RtspMediaSourceImp::addTrackCompleted()
++{
++    if (_muxer) {
++        _muxer->addTrackCompleted();
++    }
++}
++
++void RtspMediaSourceImp::resetTracks()
++{
++    if (_muxer) {
++        _muxer->resetTracks();
++    }
++}
++
++void RtspMediaSourceImp::setListener(const std::weak_ptr<MediaSourceEvent> &listener)
++{
++    if (_muxer) {
++        //_muxer对象不能处理的事件再给listener处理
++        _muxer->setMediaListener(listener);
++    }
++    else {
++        //未创建_muxer对象，事件全部给listener处理
++        MediaSource::setListener(listener);
++    }
++}
++
+ }
+ 
+diff --git a/src/Rtsp/RtspMediaSourceImp.h b/src/Rtsp/RtspMediaSourceImp.h
+index a1bd7b30..f4610975 100644
+--- a/src/Rtsp/RtspMediaSourceImp.h
++++ b/src/Rtsp/RtspMediaSourceImp.h
+@@ -12,12 +12,11 @@
+ #define SRC_RTSP_RTSPTORTMPMEDIASOURCE_H_
+ 
+ #include "RtspMediaSource.h"
+-#include "RtspDemuxer.h"
+ #include "Common/MultiMediaSourceMuxer.h"
+ 
+ namespace mediakit {
+ class RtspDemuxer;
+-class RtspMediaSourceImp final : public RtspMediaSource, private TrackListener, public MultiMediaSourceMuxer::Listener  {
++class RtspMediaSourceImp : public RtspMediaSource, private TrackListener, public MultiMediaSourceMuxer::Listener {
+ public:
+     using Ptr = std::shared_ptr<RtspMediaSourceImp>;
+ 
+@@ -35,7 +34,7 @@ public:
+      
+      * [AUTO-TRANSLATED:7679d212]
+      */
+-    RtspMediaSourceImp(const MediaTuple& tuple, int ringSize = RTP_GOP_SIZE);
++    RtspMediaSourceImp(const MediaTuple& tuple, const std::string &schema = RTSP_SCHEMA, int ringSize = RTP_GOP_SIZE);
+ 
+     /**
+      * 设置sdp
+@@ -81,15 +80,7 @@ public:
+      
+      * [AUTO-TRANSLATED:80dbcf16]
+      */
+-    bool addTrack(const Track::Ptr &track) override {
+-        if (_muxer) {
+-            if (_muxer->addTrack(track)) {
+-                track->addDelegate(_muxer);
+-                return true;
+-            }
+-        }
+-        return false;
+-    }
++    bool addTrack(const Track::Ptr &track) override;
+ 
+     /**
+      * _demuxer触发的Track添加完毕事件
+@@ -97,17 +88,9 @@ public:
+      
+      * [AUTO-TRANSLATED:939cb312]
+      */
+-    void addTrackCompleted() override {
+-        if (_muxer) {
+-            _muxer->addTrackCompleted();
+-        }
+-    }
++    void addTrackCompleted() override;
+ 
+-    void resetTracks() override {
+-        if (_muxer) {
+-            _muxer->resetTracks();
+-        }
+-    }
++    void resetTracks() override;
+ 
+     /**
+      * _muxer触发的所有Track就绪的事件
+@@ -127,23 +110,13 @@ public:
+      
+      * [AUTO-TRANSLATED:d829419b]
+      */
+-    void setListener(const std::weak_ptr<MediaSourceEvent> &listener) override{
+-        if (_muxer) {
+-            // _muxer对象不能处理的事件再给listener处理  [AUTO-TRANSLATED:47858305]
+-            // _muxer object cannot handle the event, then give it to the listener
+-            _muxer->setMediaListener(listener);
+-        } else {
+-            // 未创建_muxer对象，事件全部给listener处理  [AUTO-TRANSLATED:eec04bc3]
+-            // The _muxer object is not created, all events are given to the listener
+-            MediaSource::setListener(listener);
+-        }
+-    }
++    void setListener(const std::weak_ptr<MediaSourceEvent> &listener) override;
+ 
+     RtspMediaSource::Ptr clone(const std::string& stream) override;
+-private:
++protected:
+     bool _all_track_ready = false;
+     ProtocolOption _option;
+-    RtspDemuxer::Ptr _demuxer;
++    std::shared_ptr<RtspDemuxer> _demuxer;
+     MultiMediaSourceMuxer::Ptr _muxer;
+ };
+ } /* namespace mediakit */
+diff --git a/src/Rtsp/RtspMediaSourceMuxer.h b/src/Rtsp/RtspMediaSourceMuxer.h
+index 79385465..65628f12 100644
+--- a/src/Rtsp/RtspMediaSourceMuxer.h
++++ b/src/Rtsp/RtspMediaSourceMuxer.h
+@@ -16,16 +16,19 @@
+ 
+ namespace mediakit {
+ 
+-class RtspMediaSourceMuxer final : public RtspMuxer, public MediaSourceEventInterceptor,
++class RtspMediaSourceMuxer : public RtspMuxer, public MediaSourceEventInterceptor,
+                                    public std::enable_shared_from_this<RtspMediaSourceMuxer> {
+ public:
+     using Ptr = std::shared_ptr<RtspMediaSourceMuxer>;
+ 
+     RtspMediaSourceMuxer(const MediaTuple& tuple,
+                          const ProtocolOption &option,
+-                         const TitleSdp::Ptr &title = nullptr) : RtspMuxer(title) {
++                         const TitleSdp::Ptr &title = nullptr,
++                         const std::string &schema = RTSP_SCHEMA
++                         ): RtspMuxer(title) {
+         _option = option;
+-        _media_src = std::make_shared<RtspMediaSource>(tuple);
++        _on_demand = schema == RTSP_SCHEMA ? option.rtsp_demand : option.rtc_demand;
++        _media_src = std::make_shared<RtspMediaSource>(tuple, schema);
+         getRtpRing()->setDelegate(_media_src);
+     }
+ 
+@@ -52,19 +55,19 @@ public:
+     }
+ 
+     void onReaderChanged(MediaSource &sender, int size) override {
+-        _enabled = _option.rtsp_demand ? size : true;
+-        if (!size && _option.rtsp_demand) {
++        _enabled = _on_demand ? size : true;
++        if (!size && _on_demand) {
+             _clear_cache = true;
+         }
+         MediaSourceEventInterceptor::onReaderChanged(sender, size);
+     }
+ 
+     bool inputFrame(const Frame::Ptr &frame) override {
+-        if (_clear_cache && _option.rtsp_demand) {
++        if (_clear_cache && _on_demand) {
+             _clear_cache = false;
+             _media_src->clearCache();
+         }
+-        if (_enabled || !_option.rtsp_demand) {
++        if (_enabled || !_on_demand) {
+             return RtspMuxer::inputFrame(frame);
+         }
+         return false;
+@@ -73,16 +76,17 @@ public:
+     bool isEnabled() {
+         // 缓存尚未清空时，还允许触发inputFrame函数，以便及时清空缓存  [AUTO-TRANSLATED:7cfd4d49]
+         // The inputFrame function is still allowed to be triggered when the cache has not been cleared, so that the cache can be cleared in time.
+-        return _option.rtsp_demand ? (_clear_cache ? true : _enabled) : true;
++        return _on_demand ? (_clear_cache ? true : _enabled) : true;
+     }
+ 
+     MediaSource::Ptr getMediaSource() const {
+         return _media_src;
+     }
+ 
+-private:
++protected:
+     bool _enabled = true;
+     bool _clear_cache = false;
++    bool _on_demand = false;
+     ProtocolOption _option;
+     RtspMediaSource::Ptr _media_src;
+ };
+diff --git a/src/Rtsp/RtspMuxer.cpp b/src/Rtsp/RtspMuxer.cpp
+index 684a16f8..f14c6217 100644
+--- a/src/Rtsp/RtspMuxer.cpp
++++ b/src/Rtsp/RtspMuxer.cpp
+@@ -34,6 +34,7 @@ void RtspMuxer::onRtp(RtpPacket::Ptr in, bool is_key) {
+         // rtp拦截入口，此处统一赋值ntp  [AUTO-TRANSLATED:1412435a]
+         // RTP interception entry, set NTP here uniformly
+         in->ntp_stamp = ref.ntp_stamp;
++        ref.rtp_seq = in->getSeq() + 1;
+     } else {
+         // 点播情况下设置ntp时间戳为rtp时间戳加基准ntp时间戳  [AUTO-TRANSLATED:b9f77de4]
+         // In on-demand scenarios, set the NTP timestamp to the RTP timestamp plus the base NTP timestamp
+@@ -87,7 +88,7 @@ bool RtspMuxer::addTrack(const Track::Ptr &track) {
+     if (!encoder) {
+         return false;
+     }
+-
++    auto rtp = std::dynamic_pointer_cast<RtpInfo>(encoder);
+     // 标记已经存在该类型track  [AUTO-TRANSLATED:ed79ebb5]
+     // Mark that a track of this type already exists
+     _track_existed[track->getTrackType()] = true;
+@@ -113,6 +114,7 @@ bool RtspMuxer::addTrack(const Track::Ptr &track) {
+         GET_CONFIG(uint32_t, video_mtu, Rtp::kVideoMtuSize);
+         auto mtu = track->getTrackType() == TrackVideo ? video_mtu : audio_mtu;
+         encoder->setRtpInfo(ssrc, mtu, sdp->getSampleRate(), sdp->getPayloadType(), 2 * track->getTrackType(), track->getIndex());
++        encoder->getRtpInfo().setSeq(ref.rtp_seq);
+     }
+ 
+     // 设置rtp输出环形缓存  [AUTO-TRANSLATED:5ac7e24a]
+diff --git a/src/Rtsp/RtspMuxer.h b/src/Rtsp/RtspMuxer.h
+index 94a3bb61..b0b8f891 100644
+--- a/src/Rtsp/RtspMuxer.h
++++ b/src/Rtsp/RtspMuxer.h
+@@ -60,7 +60,7 @@ public:
+      
+      * [AUTO-TRANSLATED:f5d1b0a6]
+      */
+-    std::string getSdp() ;
++    std::string getSdp();
+ 
+     /**
+      * 获取rtp环形缓存
+@@ -105,7 +105,7 @@ public:
+      
+      * [AUTO-TRANSLATED:f203fa3e]
+      */
+-    void resetTracks() override ;
++    void resetTracks() override;
+ 
+ private:
+     void onRtp(RtpPacket::Ptr in, bool is_key);
+@@ -123,6 +123,7 @@ private:
+         Stamp stamp;
+         uint32_t rtp_stamp { 0 };
+         uint64_t ntp_stamp { 0 };
++        uint16_t rtp_seq {0};
+         RtpCodec::Ptr encoder;
+     };
+ 
+diff --git a/webrtc/Nack.cpp b/webrtc/Nack.cpp
+index 82f03552..a376bad4 100644
+--- a/webrtc/Nack.cpp
++++ b/webrtc/Nack.cpp
+@@ -9,6 +9,7 @@
+  */
+ 
+ #include "Nack.h"
++#include <algorithm>
+ #include "Common/config.h"
+ 
+ using namespace std;
+diff --git a/webrtc/RtcMediaSource.cpp b/webrtc/RtcMediaSource.cpp
+new file mode 100644
+index 00000000..d547350a
+--- /dev/null
++++ b/webrtc/RtcMediaSource.cpp
+@@ -0,0 +1,196 @@
++﻿#include "RtcMediaSource.h"
++#include "Common/config.h"
++#include "Codec/Transcode.h"
++#include "Extension/Factory.h"
++// for RTC configure
++#include "WebRtcTransport.h"
++namespace mediakit {
++
++bool needTransToOpus(CodecId codec) {
++  GET_CONFIG(int, transG711, Rtc::kTranscodeG711);
++  switch (codec)
++  {
++  case CodecG711U:
++  case CodecG711A:
++      return transG711;
++  case CodecAAC:
++      return true;
++  default:
++      return false;
++  }
++}
++
++bool needTransToAac(CodecId codec) {
++    GET_CONFIG(int, transG711, Rtc::kTranscodeG711);
++    switch (codec)
++    {
++    case CodecG711U:
++    case CodecG711A:
++        return transG711;
++    case CodecOpus:
++        return true;
++    default:
++        return false;
++    }
++}
++
++RtcMediaSourceMuxer::RtcMediaSourceMuxer(const MediaTuple& tuple, const ProtocolOption &option, const TitleSdp::Ptr &title) 
++  : RtspMediaSourceMuxer(tuple, option, title, RTC_SCHEMA)
++{
++  if (_option.audio_transcode) {
++#ifndef ENABLE_FFMPEG
++      WarnL << "without ffmpeg, skip transcode setting";
++      _option.audio_transcode = false;
++#endif
++  }
++}
++
++RtspMediaSource::Ptr RtcMediaSourceImp::clone(const std::string &stream) {
++    auto tuple = _tuple;
++    tuple.stream = stream;
++    auto src_imp = std::make_shared<RtcMediaSourceImp>(tuple);
++    src_imp->setSdp(getSdp());
++    src_imp->setProtocolOption(getProtocolOption());
++    return src_imp;
++}
++
++bool RtcMediaSourceMuxer::inputFrame(const Frame::Ptr &frame)
++{
++  if (_clear_cache && _on_demand) {
++    _clear_cache = false;
++    _media_src->clearCache();
++  }
++  if (_enabled || !_on_demand) {
++#if defined(ENABLE_FFMPEG)
++    if (_option.audio_transcode && needTransToOpus(frame->getCodecId())) {
++      if (!_audio_dec) { // addTrack可能没调, 这边根据情况再调一次
++        Track::Ptr track;
++        switch (frame->getCodecId())
++        {
++        case CodecAAC:
++          track = Factory::getTrackByCodecId(CodecAAC, 44100, 2, 16);
++          break;
++        case CodecG711A:
++        case CodecG711U:
++          track = Factory::getTrackByCodecId(frame->getCodecId());
++          break;
++        default:
++          break;
++        }
++        if (track)
++          addTrack(track);
++        if (!_audio_dec) return false;
++      }
++      if (readerCount() || !_regist) {
++        _audio_dec->inputFrame(frame, true, false);
++        if (!_count)
++          InfoL << "start transcode " << frame->getCodecName() << "," << frame->pts() << "->Opus";
++        _count++;
++      }
++      else if (_count) {
++        InfoL << "stop transcode with " << _count << " items";
++        _count = 0;
++      }
++      return true;
++    }
++#endif
++    return RtspMuxer::inputFrame(frame);
++  }
++  return false;
++}
++
++#if defined(ENABLE_FFMPEG)
++void RtcMediaSourceMuxer::onRegist(MediaSource &sender, bool regist)
++{
++  MediaSourceEventInterceptor::onRegist(sender, regist);
++  _regist = regist;
++}
++
++bool RtcMediaSourceMuxer::addTrack(const Track::Ptr & track)
++{
++  Track::Ptr newTrack = track;
++  if (_option.audio_transcode && needTransToOpus(track->getCodecId())) {
++    newTrack = Factory::getTrackByCodecId(CodecOpus);
++    GET_CONFIG(int, bitrate, General::kOpusBitrate);
++    newTrack->setBitRate(bitrate);
++    _audio_dec.reset(new FFmpegDecoder(track));
++    _audio_enc.reset(new FFmpegEncoder(newTrack));
++    // aac to opus
++    _audio_dec->setOnDecode([this](const FFmpegFrame::Ptr & frame) {
++      _audio_enc->inputFrame(frame, false);
++    });
++    _audio_enc->setOnEncode([this](const Frame::Ptr& frame) {
++        RtspMuxer::inputFrame(frame);
++    });
++  }
++  return RtspMuxer::addTrack(newTrack);
++}
++
++
++void RtcMediaSourceMuxer::resetTracks()
++{
++  RtspMuxer::resetTracks();
++  _audio_dec = nullptr;
++  _audio_enc = nullptr;
++  if (_count) {
++    InfoL << "stop transcode with " << _count << " items";
++    _count = 0;
++  }
++}
++
++bool RtcMediaSourceImp::addTrack(const Track::Ptr &track)
++{
++  if (_muxer) {
++    Track::Ptr newTrack = track;
++    if (_option.audio_transcode && needTransToAac(track->getCodecId())) {
++      newTrack = Factory::getTrackByCodecId(CodecAAC, 44100, std::dynamic_pointer_cast<AudioTrack>(track)->getAudioChannel(), 16);
++      GET_CONFIG(int, bitrate, General::kAacBitrate);
++      newTrack->setBitRate(bitrate);
++      _audio_dec.reset(new FFmpegDecoder(track));
++      _audio_enc.reset(new FFmpegEncoder(newTrack));
++      // hook data to newTack
++      track->addDelegate([this](const Frame::Ptr &frame) -> bool {
++        if (_all_track_ready && 0 == _muxer->totalReaderCount()) {
++          if (_count) {
++            InfoL << "stop transcode with " << _count << " items";
++            _count = 0;
++          }
++          return true;
++        }
++        if (_audio_dec) {
++          if (!_count)
++            InfoL << "start transcode " << frame->getCodecName() << "," << frame->pts() << "->AAC";
++          _count++;
++          _audio_dec->inputFrame(frame, true, false);
++        }
++        return true;
++      });
++      _audio_dec->setOnDecode([this](const FFmpegFrame::Ptr & frame) {
++        _audio_enc->inputFrame(frame, false);
++      });
++      _audio_enc->setOnEncode([newTrack](const Frame::Ptr& frame) {
++        newTrack->inputFrame(frame);
++      });
++    }
++
++    if (_muxer->addTrack(newTrack)) {
++      newTrack->addDelegate(_muxer);
++      return true;
++    }
++  }
++  return false;
++}
++
++void RtcMediaSourceImp::resetTracks()
++{
++  RtspMediaSourceImp::resetTracks();
++  _audio_dec = nullptr;
++  _audio_enc = nullptr;
++  if (_count) {
++    InfoL << "stop transcode with " << _count << " items";
++    _count = 0;
++  }
++}
++
++#endif
++}
+diff --git a/webrtc/RtcMediaSource.h b/webrtc/RtcMediaSource.h
+new file mode 100644
+index 00000000..342dcb41
+--- /dev/null
++++ b/webrtc/RtcMediaSource.h
+@@ -0,0 +1,62 @@
++#ifndef ZLMEDIAKIT_RTCMEDIASOURCE_H
++#define ZLMEDIAKIT_RTCMEDIASOURCE_H
++
++#include "Rtsp/RtspMediaSourceMuxer.h"
++#include "Rtsp/RtspMediaSourceImp.h"
++namespace mediakit {
++class FFmpegDecoder;
++class FFmpegEncoder;
++bool needTransToOpus(CodecId codec);
++bool needTransToAac(CodecId codec);
++
++class RtcMediaSourceImp : public RtspMediaSourceImp {
++public:
++    typedef std::shared_ptr<RtcMediaSourceImp> Ptr;
++
++    RtcMediaSourceImp(const MediaTuple& tuple, int ringSize = RTP_GOP_SIZE)
++        : RtspMediaSourceImp(tuple, RTC_SCHEMA, ringSize) {
++    }
++
++    RtspMediaSource::Ptr clone(const std::string &stream);
++#if defined(ENABLE_FFMPEG)
++    ~RtcMediaSourceImp() override { resetTracks(); }
++    /**
++     * _demuxer触发的添加Track事件
++     */
++    bool addTrack(const Track::Ptr &track) override;
++    void resetTracks() override;
++private:
++    int _count = 0;
++    std::shared_ptr<FFmpegDecoder> _audio_dec;
++    std::shared_ptr<FFmpegEncoder> _audio_enc;
++#endif
++};
++
++class RtcMediaSourceMuxer : public RtspMediaSourceMuxer {
++public:
++    typedef std::shared_ptr<RtcMediaSourceMuxer> Ptr;
++
++    RtcMediaSourceMuxer( const MediaTuple& tuple,
++                         const ProtocolOption &option,
++                         const TitleSdp::Ptr &title = nullptr);
++
++
++    bool inputFrame(const Frame::Ptr &frame) override;
++
++#if defined(ENABLE_FFMPEG)
++    ~RtcMediaSourceMuxer() override{resetTracks();}
++
++    void onRegist(MediaSource &sender, bool regist) override;
++    bool addTrack(const Track::Ptr & track) override;
++    void resetTracks() override;
++
++private:
++    int _count = 0;
++    bool _regist = false;
++    std::shared_ptr<FFmpegDecoder> _audio_dec;
++    std::shared_ptr<FFmpegEncoder> _audio_enc;
++#endif
++};
++
++}
++#endif
+\ No newline at end of file
+diff --git a/webrtc/WebRtcPusher.cpp b/webrtc/WebRtcPusher.cpp
+index dbd46724..85a0da76 100644
+--- a/webrtc/WebRtcPusher.cpp
++++ b/webrtc/WebRtcPusher.cpp
+@@ -1,177 +1,177 @@
+-﻿/*
+- * Copyright (c) 2016-present The ZLMediaKit project authors. All Rights Reserved.
+- *
+- * This file is part of ZLMediaKit(https://github.com/ZLMediaKit/ZLMediaKit).
+- *
+- * Use of this source code is governed by MIT-like license that can be found in the
+- * LICENSE file in the root of the source tree. All contributing project authors
+- * may be found in the AUTHORS file in the root of the source tree.
+- */
+-
+-#include "WebRtcPusher.h"
+-#include "Common/config.h"
+-#include "Rtsp/RtspMediaSourceImp.h"
+-
+-using namespace std;
++﻿/*
++ * Copyright (c) 2016-present The ZLMediaKit project authors. All Rights Reserved.
++ *
++ * This file is part of ZLMediaKit(https://github.com/ZLMediaKit/ZLMediaKit).
++ *
++ * Use of this source code is governed by MIT-like license that can be found in the
++ * LICENSE file in the root of the source tree. All contributing project authors
++ * may be found in the AUTHORS file in the root of the source tree.
++ */
++
++#include "WebRtcPusher.h"
++#include "Common/config.h"
++#include "RtcMediaSource.h"
++
++using namespace std;
+ using namespace toolkit;
+-
+-namespace mediakit {
+-
+-WebRtcPusher::Ptr WebRtcPusher::create(const EventPoller::Ptr &poller,
+-                                       const RtspMediaSource::Ptr &src,
+-                                       const std::shared_ptr<void> &ownership,
+-                                       const MediaInfo &info,
++
++namespace mediakit {
++
++WebRtcPusher::Ptr WebRtcPusher::create(const EventPoller::Ptr &poller,
++                                       const RtspMediaSource::Ptr &src,
++                                       const std::shared_ptr<void> &ownership,
++                                       const MediaInfo &info,
+                                        const ProtocolOption &option,
+                                        WebRtcTransport::Role role,
+                                        WebRtcTransport::SignalingProtocols signaling_protocols) {
+     WebRtcPusher::Ptr pusher(new WebRtcPusher(poller, src, ownership, info, option), [](WebRtcPusher *ptr) {
+-        ptr->onDestory();
+-        delete ptr;
+-    });
++        ptr->onDestory();
++        delete ptr;
++    });
+ 
+     pusher->setRole(role);
+     pusher->setSignalingProtocols(signaling_protocols);
+     pusher->onCreate();
+     return pusher;
+-}
+-
+-WebRtcPusher::WebRtcPusher(const EventPoller::Ptr &poller,
+-                           const RtspMediaSource::Ptr &src,
+-                           const std::shared_ptr<void> &ownership,
+-                           const MediaInfo &info,
+-                           const ProtocolOption &option) : WebRtcTransportImp(poller) {
+-    _media_info = info;
+-    _push_src = src;
+-    _push_src_ownership = ownership;
+-    _continue_push_ms = option.continue_push_ms;
+-    CHECK(_push_src);
+-}
+-
+-bool WebRtcPusher::close(MediaSource &sender) {
++}
++
++WebRtcPusher::WebRtcPusher(const EventPoller::Ptr &poller,
++                           const RtspMediaSource::Ptr &src,
++                           const std::shared_ptr<void> &ownership,
++                           const MediaInfo &info,
++                           const ProtocolOption &option) : WebRtcTransportImp(poller) {
++    _media_info = info;
++    _push_src = src;
++    _push_src_ownership = ownership;
++    _continue_push_ms = option.continue_push_ms;
++    CHECK(_push_src);
++}
++
++bool WebRtcPusher::close(MediaSource &sender) {
+     onShutdown(SockException(Err_shutdown, "close media: " + sender.getUrl()));
+     // 主动关闭推流，那么不延时注销  [AUTO-TRANSLATED:ee7cc580]
+     // Actively close the stream, then do not delay the logout
+     _push_src = nullptr;
+-    return true;
+-}
+-
+-int WebRtcPusher::totalReaderCount(MediaSource &sender) {
+-    auto total_count = _push_src ? _push_src->totalReaderCount() : 0;
+-    if (_simulcast) {
+-        std::lock_guard<std::recursive_mutex> lock(_mtx);
+-        for (auto &src : _push_src_sim) {
+-            total_count += src.second->totalReaderCount();
+-        }
+-    }
+-    return total_count;
+-}
+-
+-MediaOriginType WebRtcPusher::getOriginType(MediaSource &sender) const {
+-    return MediaOriginType::rtc_push;
+-}
+-
+-string WebRtcPusher::getOriginUrl(MediaSource &sender) const {
+-    return _media_info.full_url;
+-}
+-
+-std::shared_ptr<SockInfo> WebRtcPusher::getOriginSock(MediaSource &sender) const {
+-    return static_pointer_cast<SockInfo>(getSession());
+-}
+-
+-toolkit::EventPoller::Ptr WebRtcPusher::getOwnerPoller(MediaSource &sender) {
+-    return getPoller();
+-}
+-
+-void WebRtcPusher::onRecvRtp(MediaTrack &track, const string &rid, RtpPacket::Ptr rtp) {
+-    if (!_simulcast) {
+-        assert(_push_src);
+-        _push_src->onWrite(rtp, false);
+-        return;
+-    }
+-
+-    if (rtp->type == TrackAudio) {
+-        // 音频  [AUTO-TRANSLATED:a577d8e1]
+-        // Audio
+-        for (auto &pr : _push_src_sim) {
+-            pr.second->onWrite(rtp, false);
+-        }
+-    } else {
+-        // 视频  [AUTO-TRANSLATED:904730ac]
+-        // Video
+-        std::lock_guard<std::recursive_mutex> lock(_mtx);
+-        auto &src = _push_src_sim[rid];
+-        if (!src) {
+-            const auto& stream = _push_src->getMediaTuple().stream;
+-            auto src_imp = _push_src->clone(rid.empty() ? stream : stream + '_' + rid);
+-            _push_src_sim_ownership[rid] = src_imp->getOwnership();
+-            src_imp->setListener(static_pointer_cast<WebRtcPusher>(shared_from_this()));
+-            src = src_imp;
+-        }
+-        src->onWrite(std::move(rtp), false);
+-    }
+-}
+-
+-void WebRtcPusher::onStartWebRTC() {
+-    WebRtcTransportImp::onStartWebRTC();
+-    _simulcast = _answer_sdp->supportSimulcast();
++    return true;
++}
++
++int WebRtcPusher::totalReaderCount(MediaSource &sender) {
++    auto total_count = _push_src ? _push_src->totalReaderCount() : 0;
++    if (_simulcast) {
++        std::lock_guard<std::recursive_mutex> lock(_mtx);
++        for (auto &src : _push_src_sim) {
++            total_count += src.second->totalReaderCount();
++        }
++    }
++    return total_count;
++}
++
++MediaOriginType WebRtcPusher::getOriginType(MediaSource &sender) const {
++    return MediaOriginType::rtc_push;
++}
++
++string WebRtcPusher::getOriginUrl(MediaSource &sender) const {
++    return _media_info.full_url;
++}
++
++std::shared_ptr<SockInfo> WebRtcPusher::getOriginSock(MediaSource &sender) const {
++    return static_pointer_cast<SockInfo>(getSession());
++}
++
++toolkit::EventPoller::Ptr WebRtcPusher::getOwnerPoller(MediaSource &sender) {
++    return getPoller();
++}
++
++void WebRtcPusher::onRecvRtp(MediaTrack &track, const string &rid, RtpPacket::Ptr rtp) {
++    if (!_simulcast) {
++        assert(_push_src);
++        _push_src->onWrite(rtp, false);
++        return;
++    }
++
++    if (rtp->type == TrackAudio) {
++        // 音频  [AUTO-TRANSLATED:a577d8e1]
++        // Audio
++        for (auto &pr : _push_src_sim) {
++            pr.second->onWrite(rtp, false);
++        }
++    } else {
++        // 视频  [AUTO-TRANSLATED:904730ac]
++        // Video
++        std::lock_guard<std::recursive_mutex> lock(_mtx);
++        auto &src = _push_src_sim[rid];
++        if (!src) {
++            const auto& stream = _push_src->getMediaTuple().stream;
++            auto src_imp = _push_src->clone(rid.empty() ? stream : stream + '_' + rid);
++            _push_src_sim_ownership[rid] = src_imp->getOwnership();
++            src_imp->setListener(static_pointer_cast<WebRtcPusher>(shared_from_this()));
++            src = src_imp;
++        }
++        src->onWrite(std::move(rtp), false);
++    }
++}
++
++void WebRtcPusher::onStartWebRTC() {
++    WebRtcTransportImp::onStartWebRTC();
++    _simulcast = _answer_sdp->supportSimulcast();
+     if (canRecvRtp() && _push_src) {
+-        _push_src->setSdp(_answer_sdp->toRtspSdp());
+-    }
+-}
+-
+-void WebRtcPusher::onDestory() {
+-    auto duration = getDuration();
+-    auto bytes_usage = getBytesUsage();
+-    // 流量统计事件广播  [AUTO-TRANSLATED:6b0b1234]
+-    // Traffic statistics event broadcast
+-    GET_CONFIG(uint32_t, iFlowThreshold, General::kFlowThreshold);
+-
+-    if (getSession()) {
+-        WarnL << "RTC推流器(" << _media_info.shortUrl() << ")结束推流,耗时(s):" << duration;
+-        if (bytes_usage >= iFlowThreshold * 1024) {
+-            NOTICE_EMIT(BroadcastFlowReportArgs, Broadcast::kBroadcastFlowReport, _media_info, bytes_usage, duration, false, *getSession());
+-        }
+-    }
+-
+-    if (_push_src && _continue_push_ms) {
+-        // 取消所有权  [AUTO-TRANSLATED:4895d8fa]
+-        // Cancel ownership
+-        _push_src_ownership = nullptr;
+-        // 延时10秒注销流  [AUTO-TRANSLATED:e1bb11f9]
+-        // Delay 10 seconds to log out the stream
+-        auto push_src = std::move(_push_src);
+-        getPoller()->doDelayTask(_continue_push_ms, [push_src]() { return 0; });
+-    }
+-    WebRtcTransportImp::onDestory();
+-}
+-
+-void WebRtcPusher::onRtcConfigure(RtcConfigure &configure) const {
+-    WebRtcTransportImp::onRtcConfigure(configure);
+-    // 这只是推流  [AUTO-TRANSLATED:f877bf98]
+-    // This is just pushing the stream
+-    configure.audio.direction = configure.video.direction = RtpDirection::recvonly;
+-}
+-
+-float WebRtcPusher::getLossRate(MediaSource &sender,TrackType type) {
+-    return WebRtcTransportImp::getLossRate(type);
+-}
+-
+-void WebRtcPusher::OnDtlsTransportClosed(const RTC::DtlsTransport *dtlsTransport) {
+-   // 主动关闭推流，那么不等待重推  [AUTO-TRANSLATED:1ff514d7]
+-   // Actively close the stream, then do not wait for re-pushing
+-    _push_src = nullptr;
+-    WebRtcTransportImp::OnDtlsTransportClosed(dtlsTransport);
+-}
+-
+-void WebRtcPusher::onRtcpBye() {
+-     WebRtcTransportImp::onRtcpBye();
+-}
+-
+-void WebRtcPusher::onShutdown(const SockException &ex) {
+-     _push_src = nullptr;
+-     WebRtcTransportImp::onShutdown(ex);
+-}
+-
++        _push_src->setSdp(_answer_sdp->toRtspSdp());
++    }
++}
++
++void WebRtcPusher::onDestory() {
++    auto duration = getDuration();
++    auto bytes_usage = getBytesUsage();
++    // 流量统计事件广播  [AUTO-TRANSLATED:6b0b1234]
++    // Traffic statistics event broadcast
++    GET_CONFIG(uint32_t, iFlowThreshold, General::kFlowThreshold);
++
++    if (getSession()) {
++        WarnL << "RTC推流器(" << _media_info.shortUrl() << ")结束推流,耗时(s):" << duration;
++        if (bytes_usage >= iFlowThreshold * 1024) {
++            NOTICE_EMIT(BroadcastFlowReportArgs, Broadcast::kBroadcastFlowReport, _media_info, bytes_usage, duration, false, *getSession());
++        }
++    }
++
++    if (_push_src && _continue_push_ms) {
++        // 取消所有权  [AUTO-TRANSLATED:4895d8fa]
++        // Cancel ownership
++        _push_src_ownership = nullptr;
++        // 延时10秒注销流  [AUTO-TRANSLATED:e1bb11f9]
++        // Delay 10 seconds to log out the stream
++        auto push_src = std::move(_push_src);
++        getPoller()->doDelayTask(_continue_push_ms, [push_src]() { return 0; });
++    }
++    WebRtcTransportImp::onDestory();
++}
++
++void WebRtcPusher::onRtcConfigure(RtcConfigure &configure) const {
++    WebRtcTransportImp::onRtcConfigure(configure);
++    // 这只是推流  [AUTO-TRANSLATED:f877bf98]
++    // This is just pushing the stream
++    configure.audio.direction = configure.video.direction = RtpDirection::recvonly;
++}
++
++float WebRtcPusher::getLossRate(MediaSource &sender,TrackType type) {
++    return WebRtcTransportImp::getLossRate(type);
++}
++
++void WebRtcPusher::OnDtlsTransportClosed(const RTC::DtlsTransport *dtlsTransport) {
++   // 主动关闭推流，那么不等待重推  [AUTO-TRANSLATED:1ff514d7]
++   // Actively close the stream, then do not wait for re-pushing
++    _push_src = nullptr;
++    WebRtcTransportImp::OnDtlsTransportClosed(dtlsTransport);
++}
++
++void WebRtcPusher::onRtcpBye() {
++     WebRtcTransportImp::onRtcpBye();
++}
++
++void WebRtcPusher::onShutdown(const SockException &ex) {
++     _push_src = nullptr;
++     WebRtcTransportImp::onShutdown(ex);
++}
++
+ ////////////////////////////////////////////////////////////////////////////////////////
+ 
+ WebRtcPlayerClient::Ptr WebRtcPlayerClient::create(const EventPoller::Ptr &poller, WebRtcTransport::Role role,
+diff --git a/webrtc/WebRtcTransport.cpp b/webrtc/WebRtcTransport.cpp
+index d011df90..e823c65a 100644
+--- a/webrtc/WebRtcTransport.cpp
++++ b/webrtc/WebRtcTransport.cpp
+@@ -24,7 +24,7 @@
+ #include "Rtsp/Rtsp.h"
+ #include "Rtsp/RtpReceiver.h"
+ #include "WebRtcTransport.h"
+-
++#include "RtcMediaSource.h"
+ #include "WebRtcEchoTest.h"
+ #include "WebRtcPlayer.h"
+ #include "WebRtcPusher.h"
+@@ -56,6 +56,9 @@ const string kInterfaces = RTC_FIELD "interfaces";
+ // 设置remb比特率，非0时关闭twcc并开启remb。该设置在rtc推流时有效，可以控制推流画质  [AUTO-TRANSLATED:412801db]
+ // Set remb bitrate, when it is not 0, turn off twcc and turn on remb. This setting is valid when rtc pushes the stream, and can control the pushing stream quality
+ const string kRembBitRate = RTC_FIELD "rembBitRate";
++// 是否转码G711音频，做到: 出rtc将g711转成aac，入rtc将g711转成opus
++const string kTranscodeG711 = RTC_FIELD "transcodeG711";
++
+ // webrtc单端口udp服务器  [AUTO-TRANSLATED:d17271ea]
+ // webrtc single-port udp server
+ const string kPort = RTC_FIELD "port";
+@@ -97,6 +100,7 @@ static onceToken token([]() {
+     mINI::Instance()[kMinBitrate] = 0;
+ 
+     mINI::Instance()[kDataChannelEcho] = true;
++    mINI::Instance()[kTranscodeG711] = 0;
+ 
+     mINI::Instance()[kSignalingPort] = 3000;
+     mINI::Instance()[kSignalingSslPort] = 3001;
+@@ -1693,10 +1697,10 @@ void push_plugin(SocketHelper& sender, const WebRtcArgs &args, const onCreateWeb
+             cb(WebRtcException(SockException(Err_other, err)));
+             return;
+         }
+-
++        std::string schema = RTC_SCHEMA;
+         RtspMediaSourceImp::Ptr push_src;
+         std::shared_ptr<void> push_src_ownership;
+-        auto src = MediaSource::find(RTSP_SCHEMA, info.vhost, info.app, info.stream);
++        auto src = MediaSource::find(schema, info.vhost, info.app, info.stream);
+         auto push_failed = (bool)src;
+ 
+         while (src) {
+@@ -1726,7 +1730,7 @@ void push_plugin(SocketHelper& sender, const WebRtcArgs &args, const onCreateWeb
+         }
+ 
+         if (!push_src) {
+-            push_src = std::make_shared<RtspMediaSourceImp>(info);
++            push_src = std::make_shared<RtcMediaSourceImp>(info);
+             push_src_ownership = push_src->getOwnership();
+             push_src->setProtocolOption(option);
+         }
+@@ -1756,10 +1760,9 @@ void play_plugin(SocketHelper &sender, const WebRtcArgs &args, const onCreateWeb
+             cb(WebRtcException(SockException(Err_other, err)));
+             return;
+         }
+-
+         // webrtc播放的是rtsp的源  [AUTO-TRANSLATED:649ae489]
+         // WebRTC plays the RTSP source
+-        info.schema = RTSP_SCHEMA;
++        info.schema = RTC_SCHEMA;
+         MediaSource::findAsync(info, session_ptr, [=](const MediaSource::Ptr &src_in) mutable {
+             auto src = dynamic_pointer_cast<RtspMediaSource>(src_in);
+             if (!src) {
+diff --git a/webrtc/WebRtcTransport.h b/webrtc/WebRtcTransport.h
+index 0aa9811a..26e89dae 100644
+--- a/webrtc/WebRtcTransport.h
++++ b/webrtc/WebRtcTransport.h
+@@ -45,6 +45,7 @@ namespace Rtc {
+ extern const std::string kPort;
+ extern const std::string kTcpPort;
+ extern const std::string kTimeOutSec;
++extern const std::string kTranscodeG711;
+ extern const std::string kSignalingPort;
+ extern const std::string kSignalingSslPort;
+ extern const std::string kIcePort;

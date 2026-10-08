@@ -1,0 +1,36 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+
+# Env / secrets (never commit)
+.env
+.env.*
+!.env.example
+
+# Go
+jt808-server/bin/
+*.exe
+*.test
+
+# Python
+api/__pycache__/
+api/**/__pycache__/
+api/.venv/
+api/*.egg-info/
+*.pyc
+__pycache__/
+.venv/
+.pytest_cache/
+
+# Node / React
+web/node_modules/
+web/dist/
+web/.vite/
+web/tsconfig.tsbuildinfo
+
+# Logs
+*.log

@@ -1,0 +1,76 @@
+OpenMDVR
+Copyright 2026 Odmar Olivares and the OpenMDVR contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+-------------------------------------------------------------------------------
+Third-party software
+-------------------------------------------------------------------------------
+
+OpenMDVR depends on the following open-source projects. They are NOT
+redistributed in this repository (they are fetched by the Go, Python and npm
+package managers, or downloaded while building container images), and each
+remains under its own license:
+
+Media / video
+  - ZLMediaKit (MIT) - https://github.com/ZLMediaKit/ZLMediaKit
+    infra/zlmediakit/audio-transcode.patch is derived from ZLMediaKit's
+    upstream branch feature/transcode2 and remains under the MIT license,
+    Copyright (c) 2016-present The ZLMediaKit project authors.
+  - FFmpeg (LGPL-2.1+ / GPL-2.0+) - https://ffmpeg.org
+    The custom ZLMediaKit image built by infra/zlmediakit/Dockerfile links the
+    FFmpeg libraries packaged by Ubuntu, which are built with GPL components.
+    If you distribute that built image, you must comply with FFmpeg's license
+    terms (including providing the corresponding source). This repository
+    only contains the Dockerfile, not FFmpeg itself.
+  - mpegts.js (Apache-2.0) - https://github.com/xqq/mpegts.js
+  - Plyr (MIT) - https://github.com/sampotts/plyr
+
+Protocol / server (Go)
+  - go-jt808 (MIT) - https://github.com/cuteLittleDevil/go-jt808
+  - pgx (MIT) - https://github.com/jackc/pgx
+  - AWS SDK for Go v2 (Apache-2.0) - https://github.com/aws/aws-sdk-go-v2
+  - google/uuid (BSD-3-Clause), golang.org/x/sync (BSD-3-Clause)
+
+API (Python)
+  - FastAPI (MIT), Uvicorn (BSD-3-Clause), Pydantic (MIT), HTTPX (BSD-3-Clause),
+    PyJWT (MIT), bcrypt (Apache-2.0), boto3 (Apache-2.0),
+    email-validator (Unlicense/CC0)
+  - psycopg 3 (LGPL-3.0) - used unmodified as a library
+
+Database
+  - PostgreSQL (PostgreSQL License)
+  - TimescaleDB (Apache-2.0 for the community edition features used here)
+
+Web dashboard
+  - React, React DOM (MIT), React Router (MIT), Vite (MIT), Tailwind CSS (MIT)
+  - Leaflet (BSD-2-Clause), leaflet.markercluster (MIT),
+    react-leaflet-cluster (MIT), Leaflet.hotline (BSD-2-Clause)
+  - react-leaflet and @react-leaflet/core (Hippocratic License 2.1). This is
+    not an OSI-approved license and adds use restrictions; it applies to the
+    built web bundle. Replacing react-leaflet with plain Leaflet is tracked
+    on the roadmap.
+  - MapLibre GL JS (BSD-3-Clause), @maplibre/maplibre-gl-leaflet (ISC)
+  - lucide-react (ISC)
+
+Run `npx license-checker --production` in web/ and `go-licenses report ./...`
+in jt808-server/ for the authoritative, version-exact list.
+
+-------------------------------------------------------------------------------
+Map data
+-------------------------------------------------------------------------------
+
+Map tiles are loaded at runtime from third-party providers and are subject to
+their terms and attribution requirements, which the UI displays:
+  - OpenStreetMap data (c) OpenStreetMap contributors, ODbL 1.0
+  - OpenFreeMap / OpenMapTiles
+  - Esri World Imagery / World Street Map (Esri terms of use)
+  - CARTO basemaps (optional, requires your own API key)
+
+-------------------------------------------------------------------------------
+Trademarks
+-------------------------------------------------------------------------------
+
+Device and protocol names (JT/T 808, JT/T 1078, GT06, Concox, Jimi IoT,
+JC261, JC400, etc.) are used only to describe interoperability. They are the
+property of their respective owners, who do not endorse this project.

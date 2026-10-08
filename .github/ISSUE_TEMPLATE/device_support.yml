@@ -1,0 +1,25 @@
+name: Device / protocol support
+description: Request support for an MDVR, dashcam or GPS tracker, or report a protocol quirk.
+labels: [protocol]
+body:
+  - type: input
+    id: device
+    attributes:
+      label: Device make, model and firmware
+    validations: { required: true }
+  - type: dropdown
+    id: protocol
+    attributes:
+      label: Protocol
+      options: [JT/T 808, JT/T 1078, GT06 / Concox family, RTMP push, Other / unknown]
+  - type: textarea
+    id: capture
+    attributes:
+      label: Packet capture (hex) or server log
+      description: Raw hex of the frames is the most useful thing you can share. Redact identifiers.
+      render: text
+  - type: textarea
+    id: docs
+    attributes:
+      label: Protocol documentation
+      description: Links to public specs or vendor command references, if any.

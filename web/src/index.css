@@ -1,0 +1,575 @@
+@import "tailwindcss";
+
+/*
+ * ==========================================================================
+ * OpenMDVR · "liquid glass" visual system
+ * --------------------------------------------------------------------------
+ * How it is organized (and how to extend it):
+ * 1. Per-theme TOKENS. @theme defines the default theme (Dark/graphite); each
+ *   [data-theme="…"] overrides ONLY variables. Adding a mode = copy a
+ *   [data-theme] block and change values (and register it in lib/theme.ts); no
+ *   component changes -- Tailwind v4 generates utilities that read
+ *   var(--color-…) at runtime. The theme is applied by lib/theme.ts (and an
+ *   inline script in index.html before first paint, no flash).
+ * 2. BASE (body, selection, ambient background).
+ * 3. GLASS MATERIAL in levels, all derived from the --glass-* tokens:
+ * .glass: floating over content (map panels, mobile bar, camera windows): blur
+ * + saturation + specular highlight + light border + shadow.
+ * .glass-strong: pop-ups (menus, popovers): more opaque for legibility.
+ * .glass-card: page cards: translucent with highlight, WITHOUT backdrop-filter
+ * (with dozens of cards on a scrolling page, blur would cost real GPU for
+ * nothing: only the ambient background is behind them).
+ * .glass-rail: navigation rail.
+ * 4. Utilities (skeleton, pulse, data).
+ * 5. Third parties (Leaflet, Plyr, <option>, scrollbars) on top of the tokens.
+ * 6. Light-theme remapping of literal status colors.
+ * 7. Accessibility: prefers-reduced-transparency / -contrast / -motion.
+ * ==========================================================================
+ */
+
+/* 1. TOKENS ================================================================ */
+@theme {
+  /* Brand blue. Interactive accent only. */
+  --color-brand-50: #f2f8ff;
+  --color-brand-100: #e1efff;
+  --color-brand-300: #8cc3ff;
+  --color-brand-400: #5aa9ff;
+  --color-brand-500: #2f93ff;
+  --color-brand-600: #037dfe;
+  --color-brand-700: #036ad8;
+
+  /* Surfaces -- default theme: Dark (neutral graphite, not a blue-tinted background). */
+  --color-canvas: #090a0c;
+  --color-canvas-hi: #0d0f12;
+  --color-rail: #0c0d10;
+  --color-rail-hi: #101216;
+  --color-surface: #14161a;
+  --color-surface-hi: #181b20;
+  --color-surface-2: #1c1f25;
+  --color-surface-2-hi: #21252c;
+
+  --color-accent-warn: #f5b83d;
+  --color-accent-ok: #22c55e;
+  --color-accent-danger: #f43f5e;
+
+  --color-ink: #eef0f3;
+  --color-ink-dim: #a3acb9;
+  --color-ink-faint: #7e8796;
+
+  /*
+   * "fg": base color for translucent layers (hover, dividers, chips). White in
+   * dark themes, ink in light -- used as bg-fg/[0.06] instead of
+   * bg-white/[0.06], so the light theme inverts on its own without touching
+   * components.
+   */
+  --color-fg: #ffffff;
+
+  --color-line: rgba(255, 255, 255, 0.07);
+  --color-line-strong: rgba(255, 255, 255, 0.12);
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+
+/* Material tokens (not Tailwind colors; read by the glass classes and third-party styles). */
+:root {
+  color-scheme: dark;
+  --glass-tint: rgba(24, 27, 33, 0.58);
+  --glass-tint-strong: rgba(24, 27, 33, 0.9);
+  --glass-card: rgba(22, 25, 30, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.09);
+  --glass-highlight: rgba(255, 255, 255, 0.16);
+  --glass-sheen: rgba(255, 255, 255, 0.075);
+  --glass-shade: rgba(0, 0, 0, 0.28);
+  --glass-blur: 22px;
+  --shadow-float: 0 18px 40px -18px rgba(0, 0, 0, 0.75), 0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --ambient-1: rgba(3, 125, 254, 0.1);
+  --ambient-2: rgba(124, 92, 255, 0.07);
+  --map-chrome: rgba(18, 20, 24, 0.86);
+}
+
+/*
+ * Midnight: true black (OLED) with a deep blue tint; more contrast and lower
+ * power on OLED screens.
+ */
+[data-theme="midnight"] {
+  --color-canvas: #000000;
+  --color-canvas-hi: #03050a;
+  --color-rail: #02040a;
+  --color-rail-hi: #050912;
+  --color-surface: #0a0f1a;
+  --color-surface-hi: #0d1320;
+  --color-surface-2: #111a2a;
+  --color-surface-2-hi: #152033;
+  --color-ink: #eaf0fb;
+  --color-ink-dim: #9fb0cc;
+  --color-ink-faint: #7b8cab;
+  --color-line: rgba(160, 190, 255, 0.08);
+  --color-line-strong: rgba(160, 190, 255, 0.14);
+  --glass-tint: rgba(10, 16, 30, 0.55);
+  --glass-tint-strong: rgba(10, 16, 30, 0.9);
+  --glass-card: rgba(10, 16, 28, 0.7);
+  --glass-border: rgba(150, 185, 255, 0.12);
+  --glass-highlight: rgba(170, 200, 255, 0.2);
+  --glass-sheen: rgba(140, 180, 255, 0.08);
+  --ambient-1: rgba(3, 125, 254, 0.16);
+  --ambient-2: rgba(56, 189, 248, 0.08);
+  --map-chrome: rgba(8, 13, 25, 0.88);
+}
+
+/* Light: white surfaces with "frosted" glass and light borders. */
+[data-theme="light"] {
+  color-scheme: light;
+  --color-canvas: #eef1f6;
+  --color-canvas-hi: #f4f6fa;
+  --color-rail: #f8f9fc;
+  --color-rail-hi: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-hi: #ffffff;
+  --color-surface-2: #f1f4f9;
+  --color-surface-2-hi: #f5f7fb;
+  --color-ink: #0c1322;
+  --color-ink-dim: #475266;
+  /* #5f6b80 on white = 5.3:1 (AA for normal text). */
+  --color-ink-faint: #5f6b80;
+  --color-fg: #0c1322;
+  --color-line: rgba(12, 19, 34, 0.08);
+  --color-line-strong: rgba(12, 19, 34, 0.14);
+  --glass-tint: rgba(255, 255, 255, 0.62);
+  --glass-tint-strong: rgba(255, 255, 255, 0.94);
+  --glass-card: rgba(255, 255, 255, 0.78);
+  --glass-border: rgba(12, 19, 34, 0.09);
+  --glass-highlight: rgba(255, 255, 255, 0.95);
+  --glass-sheen: rgba(255, 255, 255, 0.6);
+  --glass-shade: rgba(12, 19, 34, 0.06);
+  --shadow-float: 0 18px 40px -20px rgba(15, 30, 60, 0.35), 0 2px 8px rgba(15, 30, 60, 0.08);
+  --shadow-card: 0 1px 2px rgba(15, 30, 60, 0.06), 0 8px 24px -16px rgba(15, 30, 60, 0.18);
+  --ambient-1: rgba(3, 125, 254, 0.14);
+  --ambient-2: rgba(124, 92, 255, 0.1);
+  --map-chrome: rgba(255, 255, 255, 0.92);
+}
+
+/* 2. BASE ================================================================== */
+/*
+ * Explicit height chain up to the viewport: full-screen layouts (map, history)
+ * resolve height:100% against their parent.
+ */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01", "tnum";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+::selection {
+  background: rgba(3, 125, 254, 0.35);
+}
+
+/*
+ * Ambient background: two very soft lights that give the glass something to
+ * refract. Static (no animation), low opacity: depth without eye strain.
+ * Applied by the shell root container (Layout.tsx) and the login.
+ */
+.ambient {
+  background:
+    radial-gradient(1100px 700px at -10% -20%, var(--ambient-1), transparent 60%),
+    radial-gradient(900px 700px at 115% 120%, var(--ambient-2), transparent 60%),
+    var(--color-canvas);
+}
+
+.bg-canvas {
+  background: var(--color-canvas);
+}
+.bg-rail {
+  background: linear-gradient(180deg, var(--color-rail-hi), var(--color-rail));
+}
+.bg-surface {
+  background: linear-gradient(160deg, var(--color-surface-hi), var(--color-surface));
+}
+.bg-surface-2 {
+  background: linear-gradient(160deg, var(--color-surface-2-hi), var(--color-surface-2));
+}
+
+/* 3. GLASS MATERIAL ====================================================== */
+/*
+ * Layers (top to bottom in `background`): - specular highlight: soft light
+ * entering from the top-left corner (radial), like the sheen on real glass; -
+ * tinted body: the surface color with transparency. Borders: light line on top
+ * (inset highlight) + inner shade at the bottom (inset shade) = glass
+ * thickness; thin outer border + drop shadow = separation from the background.
+ * No pseudo-elements on purpose: this does not require position:relative on
+ * the element (many are absolute).
+ */
+.glass {
+  background:
+    radial-gradient(120% 80% at 0% 0%, var(--glass-sheen), transparent 55%),
+    var(--glass-tint);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow:
+    inset 0 1px 0 0 var(--glass-highlight),
+    inset 0 -1px 0 0 var(--glass-shade),
+    var(--shadow-float);
+}
+
+.glass-strong {
+  background:
+    radial-gradient(120% 80% at 0% 0%, var(--glass-sheen), transparent 55%),
+    var(--glass-tint-strong);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow:
+    inset 0 1px 0 0 var(--glass-highlight),
+    var(--shadow-float);
+}
+
+.glass-card {
+  background:
+    radial-gradient(140% 90% at 0% 0%, var(--glass-sheen), transparent 50%),
+    var(--glass-card);
+  border: 1px solid var(--glass-border);
+  box-shadow:
+    inset 0 1px 0 0 var(--glass-highlight),
+    var(--shadow-card);
+}
+
+/*
+ * Navigation rail: glass over the ambient background, no drop shadow (part of
+ * the frame, not something floating).
+ */
+.glass-rail {
+  background:
+    linear-gradient(180deg, var(--glass-sheen), transparent 40%),
+    var(--glass-tint);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  border-right: 1px solid var(--glass-border);
+  box-shadow: inset -1px 0 0 0 var(--glass-highlight);
+}
+
+/* 4. UTILITIES ============================================================ */
+@keyframes omd-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--color-fg) 5%, transparent) 25%,
+    color-mix(in srgb, var(--color-fg) 11%, transparent) 37%,
+    color-mix(in srgb, var(--color-fg) 5%, transparent) 63%
+  );
+  background-size: 200% 100%;
+  animation: omd-shimmer 1.4s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+
+@keyframes omd-pulse-ring {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+.omd-pulse::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 9999px;
+  background: inherit;
+  animation: omd-pulse-ring 1.6s ease-out infinite;
+  z-index: -1;
+}
+
+/* Horizontally scrollable lane without a visible scrollbar (filter chips). */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Data/numbers in monospace: aligns columns. */
+.font-data {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 5. THIRD PARTIES ======================================================== */
+/*
+ * Each Leaflet map gets its OWN stacking context: its panes use z-index
+ * 200-1000 and without this they compete with the app's floating layers
+ * (camera windows, panels).
+ */
+.leaflet-container {
+  isolation: isolate;
+  background: var(--color-surface-2);
+  font-family: var(--font-sans);
+}
+.leaflet-bar {
+  border-radius: 12px !important;
+  overflow: hidden;
+  border: 1px solid var(--glass-border) !important;
+  box-shadow: var(--shadow-float) !important;
+}
+.leaflet-bar a {
+  width: 36px !important;
+  height: 36px !important;
+  line-height: 36px !important;
+  background-color: var(--map-chrome) !important;
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border-bottom-color: var(--color-line) !important;
+  color: var(--color-ink) !important;
+}
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: var(--map-chrome) !important;
+  color: var(--color-ink) !important;
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+.leaflet-popup-content-wrapper {
+  border-radius: 14px !important;
+  border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--shadow-float) !important;
+}
+.leaflet-popup-content {
+  margin: 12px 14px !important;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.leaflet-container a.leaflet-popup-close-button {
+  color: var(--color-ink-dim) !important;
+}
+.leaflet-control-attribution {
+  background: color-mix(in srgb, var(--color-canvas) 65%, transparent) !important;
+  color: var(--color-ink-faint) !important;
+  font-size: 10px !important;
+  border-top-left-radius: 8px;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+.leaflet-control-attribution a {
+  color: var(--color-ink-dim) !important;
+}
+
+/*
+ * Unit marker (MapView.tsx::deviceIcon): always dark with a white border --
+ * legible on any map style, light or dark.
+ */
+.omd-marker {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: auto;
+}
+.omd-marker-dot {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  border: 2.5px solid #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.omd-marker-arrow {
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-bottom: 7px solid #fff;
+  transform-origin: 50% 70%;
+}
+.omd-marker-label {
+  margin-top: 3px;
+  padding: 1px 7px;
+  border-radius: 9999px;
+  background: rgba(10, 11, 13, 0.84);
+  color: #eef0f3;
+  font: 600 10.5px/16px var(--font-sans);
+  white-space: nowrap;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+.omd-marker.is-selected .omd-marker-dot {
+  box-shadow: 0 0 0 4px rgba(3, 125, 254, 0.45), 0 2px 8px rgba(0, 0, 0, 0.55);
+}
+
+.marker-cluster-small,
+.marker-cluster-medium,
+.marker-cluster-large {
+  background: rgba(3, 125, 254, 0.28) !important;
+}
+.marker-cluster-small div,
+.marker-cluster-medium div,
+.marker-cluster-large div {
+  background: #037dfe !important;
+  color: #fff !important;
+  font: 700 12px/30px var(--font-sans) !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+}
+
+/* Geofence label (GeofenceLayer.tsx). */
+.leaflet-tooltip.geofence-label {
+  background: rgba(10, 11, 13, 0.8);
+  color: #eef0f3;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  white-space: nowrap;
+}
+.leaflet-tooltip.geofence-label::before {
+  display: none;
+}
+.geofence-drawing .leaflet-container {
+  cursor: crosshair;
+}
+
+/*
+ * Plyr (CameraTile player controls): brand accent. Video is always black, so
+ * this does not depend on the theme.
+ */
+:root {
+  --plyr-color-main: #037dfe;
+  --plyr-control-radius: 8px;
+  --plyr-control-spacing: 8px;
+  --plyr-font-family: inherit;
+}
+/*
+ * Plyr computes its own height from the video's REAL aspect ratio and left the
+ * controls floating mid-frame when the source was not 16:9 -- the tile imposes
+ * the size instead (object-fit: contain, never crop: this is surveillance
+ * video).
+ */
+.plyr,
+.plyr__video-wrapper {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  padding-bottom: 0 !important;
+}
+.plyr__video-wrapper video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain;
+}
+
+/*
+ * The native <option> popup does not reliably inherit the <select>
+ * background/text across browsers.
+ */
+option {
+  background-color: var(--color-surface-2);
+  color: var(--color-ink);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: var(--color-line-strong);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-ink-faint);
+}
+
+/* 6. LIGHT THEME REMAPPING =============================================== */
+/*
+ * Literal status colors (text-rose-300, text-emerald-300…) are designed for
+ * dark backgrounds and lack contrast on white. Instead of touching every
+ * component, the light theme maps them to their legible dark tone. Adding
+ * another color = one line here.
+ */
+[data-theme="light"] :is(.text-rose-200, .text-rose-300, .text-red-300, .text-red-400) {
+  color: #be123c;
+}
+[data-theme="light"] :is(.text-emerald-300, .text-emerald-400) {
+  color: #047857;
+}
+[data-theme="light"] :is(.text-amber-200, .text-amber-300) {
+  color: #a16207;
+}
+[data-theme="light"] :is(.text-brand-300, .text-brand-400) {
+  color: #036ad8;
+}
+[data-theme="light"] .text-accent-warn {
+  color: #b45309;
+}
+
+/* 7. ACCESSIBILITY ======================================================== */
+/*
+ * Reduced transparency (system preference): glass becomes a solid surface --
+ * same design, no translucency or blur.
+ */
+@media (prefers-reduced-transparency: reduce) {
+  .glass,
+  .glass-strong,
+  .glass-rail {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--color-surface);
+  }
+  .glass-card {
+    background: var(--color-surface);
+  }
+}
+@media (prefers-contrast: more) {
+  :root {
+    --glass-border: rgba(255, 255, 255, 0.28);
+  }
+  [data-theme="light"] {
+    --glass-border: rgba(12, 19, 34, 0.3);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton,
+  .omd-pulse::after {
+    animation: none !important;
+  }
+  * {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
