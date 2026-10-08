@@ -1,17 +1,49 @@
 version: 2
+# Minor and patch updates are grouped into one PR per ecosystem.
+# Major versions are reviewed by hand (breaking changes), so they are ignored here.
 updates:
   - package-ecosystem: gomod
     directory: /jt808-server
     schedule: { interval: weekly }
+    groups:
+      gomod-minor-patch:
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: pip
     directory: /api
     schedule: { interval: weekly }
+    groups:
+      pip-minor-patch:
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: npm
     directory: /web
     schedule: { interval: weekly }
+    groups:
+      npm-minor-patch:
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
+    groups:
+      github_actions-minor-patch:
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: docker
     directory: /infra/zlmediakit
     schedule: { interval: monthly }
+    groups:
+      docker-minor-patch:
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
