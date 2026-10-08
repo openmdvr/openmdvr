@@ -3,7 +3,7 @@ module github.com/openmdvr/openmdvr/jt808-server
 go 1.25.0
 
 require (
-	github.com/aws/aws-sdk-go-v2 v1.47.0
+	github.com/aws/aws-sdk-go-v2 v1.47.1
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.5
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.113.1
 	github.com/cuteLittleDevil/go-jt808/protocol v1.18.0
