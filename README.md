@@ -18,6 +18,10 @@
 
 ---
 
+<p align="center">
+  <img src="docs/images/map.jpg" alt="Fleet map with live unit status, geofences and alarms" width="100%">
+</p>
+
 ## Why OpenMDVR
 
 Trucks carry the goods an economy runs on. Their cameras and trackers
@@ -92,6 +96,29 @@ tab cannot stream all day on a cellular plan.
 An adaptive per-device model removes parked drift, multipath jumps and
 impossible speeds, so reports and geofences do not count kilometers a truck
 never drove. Every corrected point keeps the original reading.
+
+## Screenshots
+
+| | |
+|---|---|
+| <img src="docs/images/unit-detail.jpg" alt="Unit detail with live speed, trail and both dashcam channels"> | <img src="docs/images/live-cameras.jpg" alt="Multi-camera live view"> |
+| **Unit detail:** live speed and heading, trail on the map, alarms, and both camera channels docked below the map. | **Live view:** several cameras at once. A photo preview loads first; live WebRTC video starts on demand. |
+| <img src="docs/images/route-history.jpg" alt="Route history colored by speed with events and playback"> | <img src="docs/images/geofences.jpg" alt="Geofences with units inside each zone"> |
+| **Route history:** route colored by speed, stops, geofence and camera events, and timeline playback. | **Geofences:** circles and polygons with entry, exit and dwell events, and who is inside each zone right now. |
+
+<p align="center">
+  <img src="docs/images/mobile.jpg" alt="Mobile map view" width="300">
+  &nbsp;&nbsp;
+  <img src="docs/images/login.jpg" alt="Sign-in page" width="560">
+</p>
+
+Mobile-first: the same dashboard works on a phone, with a bottom tab bar and
+a unit card over the map.
+
+*Screenshots use a demo fleet with simulated GPS traces over real roads and
+simulated camera feeds (test patterns). The dashboard is currently in
+Spanish; an English UI is on the roadmap
+([#22](https://github.com/openmdvr/openmdvr/issues/22)).*
 
 ## Features
 
