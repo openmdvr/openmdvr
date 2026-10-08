@@ -3,7 +3,7 @@ uvicorn[standard]==0.34.0
 psycopg[binary,pool]==3.2.3
 pyjwt==2.10.1
 bcrypt==4.2.1
-pydantic==2.10.4
+pydantic==2.13.5
 email-validator==2.2.0
 httpx==0.28.1
 boto3==1.43.95
