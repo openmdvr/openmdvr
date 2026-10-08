@@ -50,7 +50,7 @@ function Brand({ compact }: { compact: boolean }) {
          * White label: tenant logo/name when configured; OpenMDVR by default
          * (a platform session has no brand of its own).
          */}
-        <img src={tenantLogoUrl ?? "/logo-mark.svg"} alt="" className="h-5 w-5 object-contain" />
+        <img src={tenantLogoUrl ?? "/logo-mark.png"} alt="" className="h-5 w-5 object-contain" />
       </span>
       {!compact && <span className="truncate text-sm font-semibold tracking-tight text-ink">{tenantDisplayName ?? "OpenMDVR"}</span>}
     </div>

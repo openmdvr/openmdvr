@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="web/public/logo-mark.svg" width="80" alt="OpenMDVR">
+  <img src="web/public/logo-mark.png" width="96" alt="OpenMDVR">
 </p>
 
 <h1 align="center">OpenMDVR</h1>

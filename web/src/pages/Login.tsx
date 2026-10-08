@@ -45,7 +45,7 @@ export default function Login() {
         <div className="flex flex-col">
           <header className="flex items-center gap-2.5 px-2 pt-2">
             <span className="glass-card flex h-10 w-10 items-center justify-center rounded-2xl">
-              <img src="/logo-mark.svg" alt="" className="h-6 w-6 object-contain" />
+              <img src="/logo-mark.png" alt="" className="h-6 w-6 object-contain" />
             </span>
             <span className="text-base font-semibold tracking-tight text-ink">OpenMDVR</span>
           </header>

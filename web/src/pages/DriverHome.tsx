@@ -141,7 +141,7 @@ export default function DriverHome() {
            * "the company app", not OpenMDVR; falls back to the default logo if
            * the tenant has not configured one (PATCH /tenants/{id}/settings).
            */}
-          <img src={tenantLogoUrl ?? "/logo-mark.svg"} alt="" className="h-6 w-auto shrink-0" />
+          <img src={tenantLogoUrl ?? "/logo-mark.png"} alt="" className="h-6 w-auto shrink-0" />
           <div>
             {tenantDisplayName && <p className="text-xs text-ink-faint">{tenantDisplayName}</p>}
             <h1 className="text-lg leading-tight font-semibold text-ink">Mi turno</h1>
