@@ -21,7 +21,7 @@ async def test_new_tenant_has_default_live_view_limit(client, platform_users, su
 async def test_tenant_out_reflects_real_consumption_this_month(client, two_tenants, superuser_conn):
     """live_view_seconds_remaining must reflect the REAL consumption recorded
     in usage_events (duration_s in metadata), not stay fixed at the full
-    quota -- the same calculation jt808-server uses for enforcement."""
+    quota -- the same calculation device-server uses for enforcement."""
     tenant_id = two_tenants["a"]["tenant_id"]
     device_id = two_tenants["a"]["device_id"]
     await superuser_conn.execute(

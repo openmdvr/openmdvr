@@ -1,6 +1,6 @@
 """The video endpoint is where the API verifies, BEFORE talking to the
 internal video bridge (which deliberately has no authentication of its own
-between the API and the bridge -- see jt808-server/internal/videobridge),
+between the API and the bridge -- see device-server/internal/videobridge),
 that the user has permission over the requested device. The IDOR test here
 is the most important one in this module.
 

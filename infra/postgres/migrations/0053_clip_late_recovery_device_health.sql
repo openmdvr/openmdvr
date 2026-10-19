@@ -87,7 +87,7 @@ GRANT SELECT ON device_health_events TO app_user;
 -- Can only be marked resolved (the event itself is never rewritten).
 GRANT UPDATE (resolved_at, resolved_by) ON device_health_events TO app_user;
 
--- Recording (and deduplication) from jt808-server. SECURITY DEFINER: app_user
+-- Recording (and deduplication) from device-server. SECURITY DEFINER: app_user
 -- has no direct INSERT.
 CREATE OR REPLACE FUNCTION record_device_health_event(
     p_device_id  UUID,

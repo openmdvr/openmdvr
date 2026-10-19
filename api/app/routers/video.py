@@ -1,6 +1,6 @@
 """Request live video from a device. This is the only place in the system
 that verifies the user has permission over a device BEFORE talking to the
-JT1078 bridge (jt808-server/internal/jt1078bridge) -- traffic between this API
+JT1078 bridge (device-server/internal/jt1078bridge) -- traffic between this API
 and the bridge is trusted-internal with no auth of its own (docker network),
 but PLAYBACK is not open: this API issues a single-use ticket bound to
 tenant+device and ZLMediaKit validates it in its on_play hook before serving a
@@ -10,7 +10,7 @@ or ZLMediaKit directly to the browser.
 POST /devices/{id}/snapshot also lives here -- a cheap preview photo, same
 permission and same "request real video" path as the endpoint above, but the
 bridge cuts the stream within seconds instead of leaving it open -- see
-jt808-server/internal/videobridge/snapshot.go. Before requesting a real
+device-server/internal/videobridge/snapshot.go. Before requesting a real
 capture, it always checks the bridge's shared cache first
 (POST /api/v1/snapshot-cache) -- if another session/tenant recently requested
 a photo of this same device+channel, that one is served without turning the
@@ -101,7 +101,7 @@ async def request_video(
     try:
         async with httpx.AsyncClient(timeout=bridge_timeout) as client:
             resp = await client.post(
-                f"{settings.jt1078_bridge_base_url}{bridge_path}",
+                f"{settings.device_server_api_url}{bridge_path}",
                 json=bridge_body,
             )
         payload = resp.json()
@@ -154,7 +154,7 @@ async def request_video(
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             ticket_resp = await client.post(
-                f"{settings.jt1078_bridge_base_url}/api/v1/video-tickets",
+                f"{settings.device_server_api_url}/api/v1/video-tickets",
                 json={
                     "tenantId": str(tenant_id),
                     "terminalId": ticket_device_key,
@@ -233,7 +233,7 @@ async def request_snapshot(
     snapshot_device_key = terminal_id if protocol == "jt808" else gt06_imei
 
     # Step 0: first ask whether there is ALREADY a recent photo in the
-    # bridge's shared cache (see jt808-server/internal/videobridge/
+    # bridge's shared cache (see device-server/internal/videobridge/
     # snapshot_cache.go) -- reloading the page, or viewing the same device
     # from another tab/session/tenant, must not turn the camera on again if
     # another session did so recently. This call NEVER touches the device --
@@ -241,7 +241,7 @@ async def request_snapshot(
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             cache_resp = await client.post(
-                f"{settings.jt1078_bridge_base_url}/api/v1/snapshot-cache",
+                f"{settings.device_server_api_url}/api/v1/snapshot-cache",
                 json={"protocol": protocol, "deviceKey": snapshot_device_key, "channel": body.channel},
             )
         if cache_resp.headers.get("content-type", "").startswith("image/jpeg"):
@@ -262,7 +262,7 @@ async def request_snapshot(
     try:
         async with httpx.AsyncClient(timeout=45.0) as client:
             native_resp = await client.post(
-                f"{settings.jt1078_bridge_base_url}/api/v1/snapshot-native",
+                f"{settings.device_server_api_url}/api/v1/snapshot-native",
                 json={"tenantId": str(tenant_id), "protocol": protocol, "deviceKey": snapshot_device_key, "channel": body.channel},
             )
         if native_resp.headers.get("content-type", "").startswith("image/jpeg"):
@@ -302,7 +302,7 @@ async def request_snapshot(
         )
     try:
         async with httpx.AsyncClient(timeout=bridge_timeout) as client:
-            resp = await client.post(f"{settings.jt1078_bridge_base_url}{bridge_path}", json=bridge_body)
+            resp = await client.post(f"{settings.device_server_api_url}{bridge_path}", json=bridge_body)
         payload = resp.json()
     except httpx.HTTPError:
         logger.exception("failed to reach jt1078bridge (snapshot, start) for device_id=%s", device_id)
@@ -325,13 +325,13 @@ async def request_snapshot(
     # Step 2: capture ONE frame and cut immediately -- all the real
     # orchestration (wait for on_publish, mint its own internal ticket, ask
     # ZLMediaKit for the frame, cut) lives in the bridge (see
-    # jt808-server/internal/videobridge/snapshot.go); this API only triggers
+    # device-server/internal/videobridge/snapshot.go); this API only triggers
     # it and translates the response. snapshot_device_key was computed above
     # (Step 0) and reused as-is.
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
             snap_resp = await client.post(
-                f"{settings.jt1078_bridge_base_url}/api/v1/snapshot",
+                f"{settings.device_server_api_url}/api/v1/snapshot",
                 json={
                     "tenantId": str(tenant_id),
                     "protocol": protocol,
@@ -374,14 +374,14 @@ async def live_view_balance(
     """REAL live-video balance of the tenant owning this unit and how many
     cameras it has open right now (with two cameras open the balance drops
     twice as fast). The number comes from the bridge's central meter
-    (jt808-server/internal/videobridge/meter.go), which knows the open
+    (device-server/internal/videobridge/meter.go), which knows the open
     sessions of ALL the tenant's users. Same permission as requesting video:
     the unit must be visible through RLS."""
     _, _, tenant_id, _ = await _lookup_camera_device(conn, device_id)
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.post(
-                f"{settings.jt1078_bridge_base_url}/api/v1/live-balance",
+                f"{settings.device_server_api_url}/api/v1/live-balance",
                 json={"tenantId": str(tenant_id)},
             )
         payload = resp.json()

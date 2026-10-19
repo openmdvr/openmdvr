@@ -6,7 +6,7 @@
 -- Same audit pattern as remote commands (0029_device_commands.sql): who
 -- requested what, when, and what REALLY happened. Protocol-agnostic on purpose:
 -- this table knows nothing about GT06 commands or HTTP uploads; that lives
--- entirely inside jt808-server.
+-- entirely inside device-server.
 --
 -- alarm_id/alarm_time are stored WITHOUT a foreign key to alarms: alarms is a
 -- hypertable (composite PK (id, "time"), chunk-partitioned) and this schema
@@ -110,7 +110,7 @@ COMMENT ON TABLE alarm_video_clips IS 'Audit of alarm-linked video clip requests
 -- and also updates alarms.video_evidence_key (denormalized so the alarm preview
 -- does not need to join this table). Same approach as acknowledge_alarm: a
 -- narrow function instead of a whole-row UPDATE. SECURITY DEFINER because
--- jt808-server runs in a bypass session (no real user app.tenant_id in that
+-- device-server runs in a bypass session (no real user app.tenant_id in that
 -- context), like insert_alarm/insert_usage_event.
 CREATE OR REPLACE FUNCTION mark_alarm_clip_ready(
     p_clip_id UUID,
@@ -122,7 +122,7 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp 
 DECLARE
     v_alarm_id UUID;
 BEGIN
-    -- Defense in depth: only jt808-server (bypass session) marks a clip ready,
+    -- Defense in depth: only device-server (bypass session) marks a clip ready,
     -- never a tenant session, even though nothing calls it that way today.
     -- Same as delete_alarm.
     IF NOT app_bypass_rls() THEN

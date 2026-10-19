@@ -7,7 +7,7 @@
 --
 -- No "cycle start" column: the reset is always "from day 1 of the calendar
 -- month in UTC", computed in the consumption query
--- (jt808-server/internal/db/tenants.go), not by a reset job. Per-tenant
+-- (device-server/internal/db/tenants.go), not by a reset job. Per-tenant
 -- billing cycles would be a change local to that query.
 ALTER TABLE tenants
     ADD COLUMN live_view_monthly_quota_seconds INTEGER NOT NULL DEFAULT 18000

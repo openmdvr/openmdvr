@@ -12,7 +12,7 @@ Thumbs.db
 !.env.example
 
 # Go
-jt808-server/bin/
+device-server/bin/
 *.exe
 *.test
 

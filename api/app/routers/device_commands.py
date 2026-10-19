@@ -1,14 +1,14 @@
 """Remote commands to devices (engine cut/restore, GT06 today) -- the most
 dangerous endpoint in the project: cutting fuel to a real vehicle. Same
-pattern as video.py (verify ownership via RLS, then talk to jt808-server over
+pattern as video.py (verify ownership via RLS, then talk to device-server over
 its trusted internal API, no auth of its own -- docker network), but STRICTER
 on permission (require_tenant_admin, not require_non_driver) and with a real
 audit trail (device_commands table, 0029_device_commands.sql): who asked for
 what, when, and what the device ACTUALLY replied, never just "it was sent".
 
 command_type is protocol-agnostic (see schemas.py) -- this router only maps
-protocol -> internal host (GT06 lives in the same jt808-server process already
-reachable at jt1078_bridge_base_url) and knows nothing about any protocol's
+protocol -> internal host (GT06 lives in the same device-server process already
+reachable at device_server_api_url) and knows nothing about any protocol's
 wire format."""
 from __future__ import annotations
 
@@ -134,7 +134,7 @@ async def send_device_command(
 
     # Step 3: ask the Go server for the command over its internal API (trusted
     # network, never exposed to the browser -- same host:port video.py uses
-    # for the bridge, the SAME jt808-server process). No database transaction
+    # for the bridge, the SAME device-server process). No database transaction
     # stays open during this call (up to 20s), so no pool connection
     # (max_size=10) is tied up for that long.
     new_status = "failed"
@@ -142,7 +142,7 @@ async def send_device_command(
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
             resp = await client.post(
-                f"{settings.jt1078_bridge_base_url}/api/v1/commands",
+                f"{settings.device_server_api_url}/api/v1/commands",
                 json={"protocol": protocol, "deviceKey": device_key, "commandType": body.command_type},
             )
         payload = resp.json()

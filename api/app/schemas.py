@@ -1294,7 +1294,7 @@ class PlatformMapSettingsUpdate(BaseModel):
 # device_commands (0029_device_commands.sql) -- remote commands to devices
 # (engine cut/restore, GT06 today). command_type is protocol-AGNOSTIC on
 # purpose: this schema knows nothing about GT06/0x80/DYD#; that lives
-# entirely in jt808-server/internal/gt06server.
+# entirely in device-server/internal/gt06server.
 # ---------------------------------------------------------------------------
 DeviceCommandType = Literal["engine_stop", "engine_resume"]
 DeviceCommandStatus = Literal["pending", "success", "failed", "timeout", "device_offline"]

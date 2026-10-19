@@ -1,11 +1,11 @@
 // Translates alarm_type (the raw value stored in the database, see
-// jt808-server/internal/gt06server/handlers.go and
-// jt808-server/internal/jt808server/location.go) into readable text instead of
+// device-server/internal/gt06server/handlers.go and
+// device-server/internal/jt808server/location.go) into readable text instead of
 // showing the internal enum. Explicit fallback (never blank) for any unlisted
 // type: replaces underscores with spaces and strips the known gt06_/jt808
 // prefix, so a new type never breaks the UI before it is added here.
 const ALARM_TYPE_LABELS: Record<string, string> = {
-  // GT06 (jt808-server/internal/gt06server/handlers.go)
+  // GT06 (device-server/internal/gt06server/handlers.go)
   gt06_sos: "Botón de pánico (SOS)",
   gt06_power_cut: "Corte de energía",
   gt06_vibration: "Vibración detectada",
@@ -30,7 +30,7 @@ const ALARM_TYPE_LABELS: Record<string, string> = {
   gt06_camera_event: "Evento de cámara detectado",
   gt06_unknown: "Alarma desconocida",
 
-  // JT808 (jt808-server/internal/jt808server/location.go)
+  // JT808 (device-server/internal/jt808server/location.go)
   emergency: "Emergencia",
   over_speed: "Exceso de velocidad",
   fatigue_driving: "Conducción con fatiga",

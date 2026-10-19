@@ -1,6 +1,6 @@
 -- Automatic clip request when a camera event (GT06 0x95) is detected: the
 -- request fires immediately on the event instead of waiting for a human to
--- click later. The trigger lives in jt808-server (Go), the same process that
+-- click later. The trigger lives in device-server (Go), the same process that
 -- detects 0x95, to minimize latency between the event and the request, with
 -- no round-trip to the Python API.
 --

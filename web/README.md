@@ -21,8 +21,8 @@ npm run dev            # http://localhost:5173
 
 The dashboard needs the API running and reachable at `VITE_API_BASE_URL`
 (see `infra/`, e.g. `docker compose up -d api`). To see real video you also
-need `jt808-server` + `zlmediakit` and a device with an active session;
-`jt808-server/testclient/simulate_video.py` lets you test without hardware.
+need `device-server` + `zlmediakit` and a device with an active session;
+`device-server/testclient/simulate_video.py` lets you test without hardware.
 
 Build for production:
 

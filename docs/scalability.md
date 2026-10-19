@@ -13,7 +13,7 @@ it. All numbers come from the load-test tool in [`loadtest/`](../loadtest).
 | | |
 |---|---|
 | Machine | One desktop, Docker Desktop VM with 20 vCPU and 16 GB RAM |
-| Device server | `jt808-server` image from this repository, **limited to 2 vCPU and 4 GB** (`--cpus=2 --memory=4g`), `PG_MAX_CONNS=16` |
+| Device server | `device-server` image from this repository, **limited to 2 vCPU and 4 GB** (`--cpus=2 --memory=4g`), `PG_MAX_CONNS=16` |
 | Database | `timescale/timescaledb:2.17.2-pg16`, all migrations applied, default configuration, not CPU-limited |
 | Load generator | `loadtest`, running on the same machine in its own container |
 | Traffic | GT06 protocol. Every simulated device opens its own TCP connection, logs in with its IMEI, waits for the login ACK, reports a GPS position every interval (with jitter) and sends a heartbeat every 3 minutes |
@@ -59,7 +59,7 @@ second on this disk, regardless of cores or connections.
 
 The fix is one statement: transactions that store GPS positions commit with
 `synchronous_commit = off`, scoped to that transaction only
-(`relaxCommitForTelemetry` in `jt808-server/internal/db/telemetry.go`).
+(`relaxCommitForTelemetry` in `device-server/internal/db/telemetry.go`).
 Alarms, billing and every API write keep fully durable commits, and any
 transaction that also inserts an alarm is forced back to a durable commit.
 After the fix, the same 20,000-device run logged in every device with a p95
@@ -141,7 +141,7 @@ docker compose -f infra/docker-compose.yml exec -T postgres \
 
 # 3. Start the device server with a higher connection cap
 GT06_MAX_CONNECTIONS=60000 DEVICE_SERVER_NOFILE=100000 \
-  docker compose -f infra/docker-compose.yml up -d jt808-server
+  docker compose -f infra/docker-compose.yml up -d device-server
 
 # 4. Run the load generator (from a machine or container that can reach port 5023)
 cd loadtest

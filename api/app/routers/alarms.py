@@ -1,13 +1,13 @@
 """Driving alarms (collision, overspeed, fatigue, etc.) detected by the
 protocol servers (e.g. the JT808 0x0200 alarm bits, see
-jt808-server/internal/jt808server/location.go).
+device-server/internal/jt808server/location.go).
 
 Retrieving video clips tied to an alarm: requested ON DEMAND, mirroring the
 data-saving rule of the whole project. Same pattern as device_commands.py: the
 audit row goes in its own short transaction BEFORE talking to the internal Go
 server (never in the same transaction as the rest of the request), and
-jt808-server never returns the file synchronously -- the device uploads it
-separately (POST /upload/{imei} on the jt808-server side) seconds/minutes
+device-server never returns the file synchronously -- the device uploads it
+separately (POST /upload/{imei} on the device-server side) seconds/minutes
 later, so this API only TRIGGERS the request and exposes its status via
 polling (GET .../clip)."""
 from __future__ import annotations
@@ -114,7 +114,7 @@ async def acknowledge_alarm(
 
 
 async def _mark_clip_failed(pool, clip_id: uuid.UUID, detail: str) -> None:
-    # jt808-server (internal/alarmclip::handleRequestClip) ALREADY marks the
+    # device-server (internal/alarmclip::handleRequestClip) ALREADY marks the
     # request failed itself when the GT06 command fails immediately
     # (SendCommand error) -- so this same request can arrive here already in a
     # terminal state (failed/ready/unsupported) set by the Go side.
@@ -130,7 +130,7 @@ async def _mark_clip_failed(pool, clip_id: uuid.UUID, detail: str) -> None:
                 (clip_id, detail),
             )
         except InsufficientPrivilege:
-            logger.info("clip %s was already in a terminal state (marked by jt808-server) -- ignored", clip_id)
+            logger.info("clip %s was already in a terminal state (marked by device-server) -- ignored", clip_id)
 
 
 # CLIP_STALE_AFTER: the device never confirms the request immediately (see
@@ -260,32 +260,32 @@ async def request_alarm_clip(
         ).fetchone()
         clip_id = clip_row[0]
 
-    # Step 3: fire the real request at jt808-server (trusted internal network,
+    # Step 3: fire the real request at device-server (trusted internal network,
     # same host:port as video.py/device_commands.py) -- async, NEVER waits for
     # the file: the device uploads it separately later, correlated by IMEI
     # (see internal/alarmclip on the Go side). A failure here marks the request
     # failed immediately instead of leaving it stuck in 'requested'.
-    # timeout=10.0: jt808-server no longer waits for any synchronous device
+    # timeout=10.0: device-server no longer waits for any synchronous device
     # reply for this command (see gt06server.SendRawCommandFireAndForget: the
     # device never answers on the normal command channel), so waiting here
     # would only reintroduce mismatched timeouts between this client and the
     # Go-side budget. Sending is just a write to an already open socket, so
-    # jt808-server replies almost immediately -- this timeout only covers real
+    # device-server replies almost immediately -- this timeout only covers real
     # internal network/connectivity problems.
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(
-                f"{settings.jt1078_bridge_base_url}/api/v1/gt06-alarm-clip",
+                f"{settings.device_server_api_url}/api/v1/gt06-alarm-clip",
                 json={"clipId": str(clip_id), "imei": gt06_imei, "alarmTime": alarm_time.isoformat()},
             )
         payload = resp.json()
     except (httpx.HTTPError, ValueError):
-        logger.exception("failed to reach jt808-server to request clip alarm_id=%s", alarm_id)
+        logger.exception("failed to reach device-server to request clip alarm_id=%s", alarm_id)
         await _mark_clip_failed(pool, clip_id, "could not reach the video service")
     else:
         if payload.get("code") != 0:
             logger.warning(
-                "jt808-server responded code=%s msg=%s for clip_id=%s",
+                "device-server responded code=%s msg=%s for clip_id=%s",
                 payload.get("code"),
                 payload.get("msg"),
                 clip_id,

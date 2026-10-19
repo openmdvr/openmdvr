@@ -1,7 +1,7 @@
 """POST /alarms/{id}/request-clip and GET /alarms/{id}/clip -- retrieval of
 video clips tied to an alarm (GT06/JC261). This file focuses on the
 protocol gate (only gt06_video supports this today), idempotency (never
-fire the request twice), that jt808-server is called with the right
+fire the request twice), that device-server is called with the right
 payload, that a failure of that call marks the request as failed instead
 of leaving it stuck in 'requested', and tenant isolation -- same approach
 as test_device_commands.py, including explicit coverage of the driver role."""
@@ -154,7 +154,7 @@ async def test_request_clip_bridge_nonzero_code_marks_failed(client, two_tenants
 
 
 async def test_request_clip_bridge_already_marked_failed_no_500(client, two_tenants, pool):
-    """Regression: jt808-server (internal/alarmclip::handleRequestClip) marks
+    """Regression: device-server (internal/alarmclip::handleRequestClip) marks
     the clip 'failed' itself BEFORE the HTTP response reaches this API when
     SendCommand fails immediately (e.g. device not connected).
     mark_alarm_clip_failed() refuses to reopen a terminal state
@@ -168,7 +168,7 @@ async def test_request_clip_bridge_already_marked_failed_no_500(client, two_tena
     token = await login(client, two_tenants["a"]["email"])
 
     async def fake_post(_url, json):
-        # Reproduce exactly what jt808-server really does: mark the clip
+        # Reproduce exactly what device-server really does: mark the clip
         # failed BEFORE this response reaches the API.
         async with db_module.tenant_scoped_connection(pool, tenant_id=None, bypass=True) as conn:
             await conn.execute(

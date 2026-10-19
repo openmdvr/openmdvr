@@ -5,7 +5,7 @@ already see the device (same as last_seen_at, no extra restriction), and
 NULL until the device reports for the first time.
 
 The real write is done by jt808server/gt06server (see
-jt808-server/internal/db/devices.go::UpdateDeviceStatus) -- these tests
+device-server/internal/db/devices.go::UpdateDeviceStatus) -- these tests
 simulate that write with a direct UPDATE (same approach as
 test_billing_sim_usage.py with record_device_data_usage); they do not
 exercise protocol parsing (that lives in each package's Go tests)."""

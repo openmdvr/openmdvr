@@ -1,7 +1,7 @@
 # Device protocols
 
 OpenMDVR runs every device listener in a single Go binary
-(`jt808-server/`). Location data from every protocol goes through the same
+(`device-server/`). Location data from every protocol goes through the same
 database path (`insert_gps_position()`), so geofences, speed limits, the GPS
 quality filter, live push and reports work identically for all of them.
 Video protocols implement one interface (`videobridge.Protocol`), so a new
@@ -28,14 +28,14 @@ camera family plugs in without touching the others.
 
 ## Adding a protocol
 
-1. Add a listener package under `jt808-server/internal/` following the
+1. Add a listener package under `device-server/internal/` following the
    hardening checklist in [security-model.md](security-model.md#3-device-ingestion-internet-facing-tcp).
 2. Resolve the device by its identifier, then write positions with
    the GPS-quality-filtered position insert in `internal/db` and alarms
    with `db.InsertAlarm`.
 3. For video, implement `videobridge.Protocol` and register it in
    `cmd/server/main.go`.
-4. Add a Python simulator under `jt808-server/testclient/` written
+4. Add a Python simulator under `device-server/testclient/` written
    independently of the server code, so tests prove interoperability rather
    than that the code agrees with itself.
 5. Add a migration extending the `device_protocol` enum and identifier checks.

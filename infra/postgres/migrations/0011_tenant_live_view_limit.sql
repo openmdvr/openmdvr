@@ -1,6 +1,6 @@
 -- Maximum seconds a tenant can watch a device live per stream session. This is
 -- a real bandwidth cost control, not a UI hint: the JT1078 bridge
--- (jt808-server/internal/jt1078bridge) enforces it by cutting the stream
+-- (device-server/internal/jt1078bridge) enforces it by cutting the stream
 -- server-side when it expires, regardless of what the client does.
 -- Configurable per tenant so higher plans can get a higher limit
 -- (PATCH /tenants/{id}, super_admin/support only).

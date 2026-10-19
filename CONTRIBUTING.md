@@ -29,14 +29,14 @@ docker compose -f infra/docker-compose.yml up -d --build
 Then open the dashboard (default `http://127.0.0.1:5175`) and create the first
 platform admin with `api/scripts` (see [api/README.md](api/README.md)).
 
-No hardware? Use the simulators in `jt808-server/testclient/`
+No hardware? Use the simulators in `device-server/testclient/`
 (`simulate.py`, `simulate_gt06.py`, `simulate_video.py`).
 
 ## Running tests
 
 ```bash
 # Go (device servers, video bridge)
-cd jt808-server && go vet ./... && go test ./...
+cd device-server && go vet ./... && go test ./...
 
 # API (needs the Postgres container running)
 cd api && pip install -r requirements.txt -r requirements-dev.txt && pytest
@@ -67,7 +67,7 @@ cd web && npm ci && npx tsc -b && npx vite build
 Location protocols write positions through the single
 `insert_gps_position()` path, so geofences, speed limits, the GPS quality
 filter and live push work automatically. Video protocols implement the
-`videobridge.Protocol` interface in `jt808-server/internal/videobridge`.
+`videobridge.Protocol` interface in `device-server/internal/videobridge`.
 See [docs/architecture.md](docs/architecture.md). Packet captures (hex dumps)
 from real devices are extremely valuable — attach them to the issue with
 identifiers redacted.

@@ -18,7 +18,7 @@ uvicorn server decouples sending headers from the generator lifecycle,
 just like in production -- the only honest way to test a real stream.
 
 Design note: _insert_position() (below) calls insert_gps_position()
-directly via SQL, NEVER through jt808-server -- on purpose. This is not
+directly via SQL, NEVER through device-server -- on purpose. This is not
 just a test shortcut: it shows that the real-time layer is
 protocol-agnostic (see the api/app/live_positions.py docstring and the
 comment in infra/postgres/migrations/0018_gps_position_notify.sql). Any
@@ -46,7 +46,7 @@ _read_one_event = read_one_sse_event  # local alias, the name the rest of this f
 
 async def _insert_position(pool, tenant_id, device_id, lat=19.4326, lon=-99.1332):
     """Calls insert_gps_position() directly via SQL -- simulates ingestion
-    from ANY protocol, never going through jt808-server. See the design note
+    from ANY protocol, never going through device-server. See the design note
     at the top of this file."""
     from app import db as db_module
 

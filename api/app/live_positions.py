@@ -32,7 +32,7 @@ protocol detail. Any protocol server that resolves its own device_id gets the
 full real-time push without this file changing -- see the comment in
 infra/postgres/migrations/0018_gps_position_notify.sql and, in
 api/tests/test_positions_stream.py, every test inserts positions by calling
-insert_gps_position() directly via SQL, never through jt808-server, as
+insert_gps_position() directly via SQL, never through device-server, as
 empirical proof of this decoupling."""
 from __future__ import annotations
 

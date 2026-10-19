@@ -89,7 +89,7 @@ CREATE POLICY device_data_usage_monthly_select ON device_data_usage_monthly FOR 
 
 GRANT SELECT ON device_data_usage_monthly TO app_user;
 
--- record_device_data_usage: the only write path, called from jt808-server (Go,
+-- record_device_data_usage: the only write path, called from device-server (Go,
 -- bypass session) when each connection closes / periodically while it is open.
 -- SECURITY DEFINER because app_user has no direct INSERT/UPDATE grant (same
 -- pattern as insert_alarm/insert_usage_event). Best effort: if the device was

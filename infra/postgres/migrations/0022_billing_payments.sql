@@ -16,7 +16,7 @@
 --    already blocks LOGIN). The point is that it ALSO blocks live video
 --    (POST /devices/{id}/video) while a session with an unexpired JWT is alive.
 --    GPS/alarm ingestion is NEVER cut on purpose (cheap to store, avoids data
---    gaps if the customer pays and is reactivated); no jt808-server changes.
+--    gaps if the customer pays and is reactivated); no device-server changes.
 -- 4. Fixed grace period (5 days after due_date) before suspending; not
 --    configurable per tenant yet. If needed, that is a new `tenants` column,
 --    not a change to this logic.

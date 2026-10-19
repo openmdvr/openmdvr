@@ -6,7 +6,7 @@ authorization, billing, notifications, API keys, outgoing webhooks and
 geofences.
 
 Device traffic (JT808/JT1078/GT06) is handled by the Go service in
-`jt808-server`; this API is ordinary request/response CRUD, which is why it
+`device-server`; this API is ordinary request/response CRUD, which is why it
 is written in Python. Both services share the same PostgreSQL + TimescaleDB
 database and the same Row Level Security (RLS) model.
 
@@ -27,7 +27,7 @@ environment variables (`app/config.py`):
 | `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `APP_USER_PASSWORD` | Connection as `app_user` (the non-owner role RLS applies to) |
 | `JWT_SECRET`, `JWT_EXPIRE_MINUTES` (default 480) | Session tokens |
 | `API_KEY_PEPPER` | HMAC pepper for API key hashes, deliberately separate from `JWT_SECRET` |
-| `JT1078_BRIDGE_BASE_URL` | Internal video bridge in `jt808-server` (Docker network only) |
+| `DEVICE_SERVER_API_URL` | Internal video bridge in `device-server` (Docker network only) |
 | `R2_ENDPOINT`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_BUCKET` | Optional S3-compatible storage for alarm clips (signed URLs) |
 
 ### First super_admin
@@ -235,7 +235,7 @@ only receives its own row, never the full recipient list.
 
 `POST /devices/{id}/video` is the trust boundary for video. It resolves the
 device through the RLS-scoped connection, then calls the internal bridge
-(`JT1078_BRIDGE_BASE_URL`, no auth of its own, never exposed publicly):
+(`DEVICE_SERVER_API_URL`, no auth of its own, never exposed publicly):
 `/api/v1/9101` for JT808 cameras or `/api/v1/gt06-video` for GT06 dashcams,
 followed by `/api/v1/video-tickets`. The playback URL carries a single-use
 ticket bound to tenant, device, app and channel that ZLMediaKit validates in

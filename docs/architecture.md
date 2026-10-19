@@ -5,7 +5,7 @@ reference for the project: when an architectural decision changes, update
 this file in the same change that motivates it.
 
 Component-level detail (exact endpoints, test inventories, edge cases) lives
-in `api/README.md`, `jt808-server/README.md` and `web/README.md`. The threat
+in `api/README.md`, `device-server/README.md` and `web/README.md`. The threat
 model and security controls are summarized in
 [security-model.md](security-model.md); device protocol coverage is in
 [protocols.md](protocols.md).
@@ -117,7 +117,7 @@ flowchart LR
 ### Repository layout
 
 ```
-/jt808-server   Go device server: JT808, JT1078 bridge, GT06, RTMP video, commands, clips
+/device-server   Go device server: JT808, JT1078 bridge, GT06, RTMP video, commands, clips
 /api            FastAPI business API
 /web            React dashboard
 /infra          docker-compose, PostgreSQL migrations and RLS tests, ZLMediaKit image/config
@@ -260,7 +260,7 @@ traffic. Each follows the same hardening checklist:
 The low-level codec (framing, escaping, checksum, message structs) comes from
 `go-jt808/protocol` (MIT), adopted after an audit: license, activity, grep of
 network/exec/unsafe calls, and `govulncheck`, repeated on version bumps
-(procedure in `jt808-server/README.md`). Tenant resolution, device
+(procedure in `device-server/README.md`). Tenant resolution, device
 authentication and database writes are project code: that is the trust
 boundary and is not delegated.
 

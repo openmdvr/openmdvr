@@ -22,7 +22,7 @@ import { api, ApiError, negotiateWebrtc, type DeviceProtocol } from "../lib/api"
 // time-limit status/countdown is our own overlay on top of the frame (Plyr knows
 // nothing about it).
 //
-// Per-tenant time limit: the REAL cut happens server side (jt808-server bridge,
+// Per-tenant time limit: the REAL cut happens server side (device-server bridge,
 // enforceLiveViewLimit). This component only reflects it, never enforces it. The
 // countdown keeps the user from being surprised when video stops; "watch again"
 // simply requests video again, which opens a new session because the bridge

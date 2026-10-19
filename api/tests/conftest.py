@@ -44,7 +44,7 @@ os.environ.setdefault("PGDATABASE", "openmdvr")
 os.environ.setdefault("PGUSER", "app_user")
 os.environ.setdefault("JWT_SECRET", "test-secret-never-use-in-production")
 os.environ.setdefault("API_KEY_PEPPER", "test-api-key-pepper-never-use-in-production")
-os.environ.setdefault("JT1078_BRIDGE_BASE_URL", "http://127.0.0.1:8082")
+os.environ.setdefault("DEVICE_SERVER_API_URL", "http://127.0.0.1:8082")
 
 from app import db as db_module  # noqa: E402
 from app.config import get_settings  # noqa: E402

@@ -1,11 +1,11 @@
 -- Remote commands to devices (currently: GT06 engine cut/resume). Audits "who
 -- requested what, when, and what the device REALLY replied", not just "it was
 -- sent". Design: a protocol-agnostic layer (API/DB/frontend) separate from a
--- per-protocol layer inside jt808-server.
+-- per-protocol layer inside device-server.
 --
 -- command_type is protocol-agnostic on purpose (common fleet-platform
 -- vocabulary): this table knows nothing about GT06/0x80/DYD#; that lives
--- entirely in jt808-server/internal/gt06server. Adding a command_type (from any
+-- entirely in device-server/internal/gt06server. Adding a command_type (from any
 -- future protocol) is one more CHECK value here, never a redesign.
 --
 -- Normal low-volume table (not a hypertable), like vehicles/drivers

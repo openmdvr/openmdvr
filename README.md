@@ -202,7 +202,7 @@ docker compose -f infra/docker-compose.yml exec api python scripts/bootstrap_adm
 ```
 
 Open <http://127.0.0.1:5175> and sign in. To try it without hardware, use
-the device simulators in [jt808-server/testclient](jt808-server/testclient).
+the device simulators in [device-server/testclient](device-server/testclient).
 
 ## Architecture
 

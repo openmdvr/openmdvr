@@ -10,7 +10,7 @@ OpenMDVR handles location history, live video and remote vehicle commands
 ("Report a vulnerability" on the Security tab).
 
 Include, if you can:
-- affected component (`jt808-server`, `api`, `web`, `infra`) and commit,
+- affected component (`device-server`, `api`, `web`, `infra`) and commit,
 - steps to reproduce or a proof of concept,
 - impact (e.g. cross-tenant data access, auth bypass, DoS of device ingestion).
 

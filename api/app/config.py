@@ -30,7 +30,9 @@ class Settings:
     # mechanism stays protected.
     api_key_pepper: str
 
-    jt1078_bridge_base_url: str
+    # Internal control API of the device server (JT1078/GT06 video, snapshots,
+    # remote commands, clips) -- reachable only on the Docker network.
+    device_server_api_url: str
 
     # --- S3-compatible storage (Cloudflare R2, see app/storage.py) -- all
     # optional: a deployment without a configured bucket simply cannot issue
@@ -56,7 +58,7 @@ def get_settings() -> Settings:
         jwt_secret=_require("JWT_SECRET"),
         jwt_expire_minutes=int(os.environ.get("JWT_EXPIRE_MINUTES", "480")),
         api_key_pepper=_require("API_KEY_PEPPER"),
-        jt1078_bridge_base_url=os.environ.get("JT1078_BRIDGE_BASE_URL", "http://127.0.0.1:8082"),
+        device_server_api_url=os.environ.get("DEVICE_SERVER_API_URL", "http://127.0.0.1:8082"),
         r2_endpoint=os.environ.get("R2_ENDPOINT") or None,
         r2_access_key=os.environ.get("R2_ACCESS_KEY") or None,
         r2_secret_key=os.environ.get("R2_SECRET_KEY") or None,

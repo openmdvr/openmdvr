@@ -54,7 +54,7 @@ Web dashboard
   - lucide-react (ISC)
 
 Run `npx license-checker --production` in web/ and `go-licenses report ./...`
-in jt808-server/ for the authoritative, version-exact list.
+in device-server/ for the authoritative, version-exact list.
 
 -------------------------------------------------------------------------------
 Map data

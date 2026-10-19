@@ -3,7 +3,7 @@ dependency (deps.py) -- that dependency needs an already valid JWT to know
 which tenant to scope the session to, and at login there is no JWT yet: the
 email must be resolved WITHOUT knowing the tenant in advance, so this specific
 query uses a bypass connection, just like the JT808 server resolves a device
-by terminal_id without knowing its tenant (jt808-server/internal/db/devices.go)."""
+by terminal_id without knowing its tenant (device-server/internal/db/devices.go)."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status

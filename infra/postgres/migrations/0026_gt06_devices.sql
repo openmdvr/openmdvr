@@ -1,6 +1,6 @@
 -- Support for GT06 devices (GPS trackers without a camera, Concox GT06 binary
 -- protocol and clones) alongside the existing JT808 (camera/MDVR) devices.
--- See jt808-server/internal/gt06server/ for the TCP server that resolves this
+-- See device-server/internal/gt06server/ for the TCP server that resolves this
 -- identifier. insert_gps_position()/insert_alarm() (0009/0018) were already
 -- protocol-agnostic and need no changes.
 

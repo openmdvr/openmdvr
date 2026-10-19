@@ -48,10 +48,10 @@ services:
       postgres:
         condition: service_healthy
 
-  jt808-server:
+  device-server:
     build:
-      context: ../jt808-server
-    container_name: openmdvr-jt808-server
+      context: ../device-server
+    container_name: openmdvr-device-server
     restart: unless-stopped
     ulimits:
       nofile:
@@ -177,7 +177,7 @@ services:
       # The service name resolves to the video bridge. Its internal HTTP
       # port (8082) must NEVER be exposed to the internet; only this API
       # should call it.
-      JT1078_BRIDGE_BASE_URL: "http://jt808-server:8082"
+      DEVICE_SERVER_API_URL: "http://device-server:8082"
       # S3-compatible storage (see app/storage.py), read side: Python only
       # signs download URLs and never sees the bytes. Empty values make URL
       # signing raise StorageNotConfigured without breaking the rest of the
@@ -240,7 +240,7 @@ services:
     ports:
       # 80 (HTTP API, HTTP-FLV): the browser consumes it directly, so it is
       # public in production. The rtp_proxy (10000 + port_range
-      # 30000-35000) is never exposed: only jt808-server, on the same docker
+      # 30000-35000) is never exposed: only device-server, on the same docker
       # network, connects to it.
       # ZLM_HTTP_PORT (host side, default 80) exists because a reverse proxy
       # may already own host port 80; in that case set another port (e.g.

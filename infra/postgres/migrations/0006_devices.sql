@@ -8,7 +8,7 @@ CREATE TABLE devices (
     -- tenant the device belongs to.
     --
     -- NO leading zeros: the BCD decoder used by the JT808 server
-    -- (jt808-server/internal/db/devices.go) always strips them when reading the
+    -- (device-server/internal/db/devices.go) always strips them when reading the
     -- terminal number reported by the hardware, so a value stored here WITH a
     -- leading zero would never match and the device could never connect. The
     -- CHECK enforces this instead of leaving it as an easy-to-miss note.

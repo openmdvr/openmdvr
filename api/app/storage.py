@@ -1,6 +1,6 @@
 """Object storage abstraction layer (business code never uses a vendor SDK
-directly). This module is the READ side: jt808-server (Go) uploads the bytes
-the device sends (see jt808-server/internal/storage); this API never sees the
+directly). This module is the READ side: device-server (Go) uploads the bytes
+the device sends (see device-server/internal/storage); this API never sees the
 file contents, it only signs short-lived read URLs so the frontend can play
 the clip.
 

@@ -13,7 +13,7 @@ from ..security import TokenClaims
 router = APIRouter(prefix="/tenants", tags=["tenants"])
 
 # Start of the calendar month in UTC, as timestamptz -- same rule as
-# db.GetTenantLiveViewSecondsConsumedThisMonth in jt808-server (Go): there is
+# db.GetTenantLiveViewSecondsConsumedThisMonth in device-server (Go): there is
 # no "cycle start" column, the balance simply renews each month. The double AT
 # TIME ZONE is the standard Postgres idiom for "midnight of day 1 in UTC" as
 # timestamptz without depending on the session time zone.

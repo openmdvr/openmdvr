@@ -3,7 +3,7 @@ version: 2
 # Major versions are reviewed by hand (breaking changes), so they are ignored here.
 updates:
   - package-ecosystem: gomod
-    directory: /jt808-server
+    directory: /device-server
     schedule: { interval: weekly }
     groups:
       gomod-minor-patch:

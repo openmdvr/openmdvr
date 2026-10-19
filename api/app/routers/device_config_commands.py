@@ -129,7 +129,7 @@ async def send_device_config_command(
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
             resp = await client.post(
-                f"{settings.jt1078_bridge_base_url}/api/v1/gt06-raw-command",
+                f"{settings.device_server_api_url}/api/v1/gt06-raw-command",
                 json={"protocol": "gt06", "deviceKey": device_key, "text": raw_text},
             )
         payload = resp.json()

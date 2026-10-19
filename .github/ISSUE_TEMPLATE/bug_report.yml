@@ -6,7 +6,7 @@ body:
     id: component
     attributes:
       label: Component
-      options: [jt808-server (device ingestion), video bridge / ZLMediaKit, api, web dashboard, infra / deployment, docs]
+      options: [device-server (device ingestion), video bridge / ZLMediaKit, api, web dashboard, infra / deployment, docs]
     validations: { required: true }
   - type: textarea
     id: what

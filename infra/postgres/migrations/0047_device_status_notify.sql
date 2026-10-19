@@ -2,7 +2,7 @@
 -- 0018_gps_position_notify.sql, and in-app notifications, 0033/0034).
 --
 -- Unlike insert_gps_position(), writes to ignition_on/power_connected do NOT
--- go through a single SECURITY DEFINER function: jt808-server issues a direct
+-- go through a single SECURITY DEFINER function: device-server issues a direct
 -- UPDATE (UpdateDeviceStatus, internal/db/devices.go) with its own
 -- COALESCE/IS DISTINCT FROM logic. A TRIGGER is the right choke point: it fires
 -- regardless of which code writes the row, and ONLY when
