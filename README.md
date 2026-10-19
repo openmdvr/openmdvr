@@ -42,9 +42,8 @@ application code being correct.
 Most fleet platforms on the market share the same lineage. They are GPS
 servers first: built to decode location reports from as many tracker brands
 as possible, with users and permissions handled in application code, and
-with video added later, if at all. Many white-label offerings are the same
-open-source GPS engine under a different logo, so they inherit the same
-strengths and the same limits.
+with video added later, if at all. Many are built on the same open-source
+GPS engines, so they inherit the same strengths and the same limits.
 
 OpenMDVR starts from the other end.
 
@@ -97,33 +96,40 @@ An adaptive per-device model removes parked drift, multipath jumps and
 impossible speeds, so reports and geofences do not count kilometers a truck
 never drove. Every corrected point keeps the original reading.
 
+## What each device family can do
+
+Capabilities depend on the device. Telemetry and the whole dashboard are
+common to all; video and commands depend on what the hardware exposes.
+
+| Capability | MDVR — JT/T 808 + 1078 | GPS tracker — GT06 | Dashcam — GT06 + RTMP (JC261/JC400) |
+|---|---|---|---|
+| GPS, alarms, geofences, reports | yes | yes | yes |
+| Live video (WebRTC) | yes | — (no camera) | yes |
+| Photo preview / snapshot | live frame | — | yes (native photo) |
+| Recorded clip for an event | roadmap | — | yes (automatic) |
+| Remote engine stop / resume | — | yes | yes |
+| Configuration commands | — | yes | yes |
+
+Verified against real hardware: a CY06-2G tracker (GT06) and a Jimi JC261
+dashcam (GT06 + RTMP). JT/T 808/1078 MDVR support is exercised with the
+simulators in [device-server/testclient](device-server/testclient); it has
+not yet been validated against a physical MDVR. Per-protocol detail and what
+is deferred are in [docs/protocols.md](docs/protocols.md).
+
 ## Who it is for
 
-OpenMDVR is for a carrier or operator that wants to **own its fleet video
-and location data** and run the platform on infrastructure it controls. The
-whole system is a modular monolith: one Go binary, one API, one database,
-deployed with a single `docker compose up` and operable by one person. That
-simplicity is the point. It is what lets a fleet self-host without a
-platform team, and it is a deliberate choice, not a missing feature.
+OpenMDVR is for anyone who wants to **own their fleet video and location
+data** and run it on infrastructure they control, in two shapes from the same
+modular monolith (one Go binary, one API, one database, `docker compose up`):
 
-A single server already scales a long way up — the load test stored every
-position from 50,000 simulated trackers on 2 vCPU (see [Scale](#scale)).
-Going beyond that is possible: `docs/scalability.md` describes how (more
-device servers on separate ports behind a TCP load balancer, batching the
-insert path). It simply needs more infrastructure and some distribution,
-and we do not ship a turnkey guide for it yet, because that is not the
-common case this project is built around. A fleet of hundreds of thousands
-of devices under one roof has different priorities — infrastructure cost is
-noise at that scale, and a self-installable box may no longer be the goal.
-OpenMDVR can be grown toward it; it just does not pretend, out of the box,
-to be an elastic SaaS for it.
+- **A small fleet** running a single tenant, operable by one person without a
+  platform team.
+- **An operator** serving several tenants, with per-tenant isolation, roles,
+  plans, invoicing and per-SIM cost — one deployment, many customers.
 
-Nothing on this page is a projection. The scale numbers come from load tests
-on a single desktop — simulated devices, but a real server, a real database,
-and rows actually counted after each run, with the method and the bottleneck
-we hit documented so anyone can reproduce them. The pilot runs on real
-hardware. Where something is not yet certified or not yet proven against a
-device, this README says so.
+Self-hosting without a platform team is the point, not a limitation: the
+monolith is a deliberate choice. Scale, hardware and method are in
+[Scale](#scale) and [docs/scalability.md](docs/scalability.md).
 
 ## Screenshots
 
@@ -170,6 +176,12 @@ concurrent connections and in positions stored per second. In our load test,
 a device server limited to **2 vCPU and 4 GB held 50,000 simulated trackers**
 with zero failed logins (p95 login latency 2 ms) and stored every one of the
 549,759 positions they sent, at about 2,300 messages per second.
+
+That figure is the device server alone: GT06 telemetry, simulated devices,
+one machine, no video. PostgreSQL ran separately and used about 6 cores in
+the same run, and position writes use `synchronous_commit=off` (alarms and
+every other write stay durable). The full method, hardware and trade-offs
+are in [docs/scalability.md](docs/scalability.md).
 
 The device server is written in Go, with one lightweight goroutine per
 connection (about 20 to 26 KB each), bounded buffers, panic recovery per
