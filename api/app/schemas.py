@@ -353,6 +353,10 @@ class DeviceOut(BaseModel):
     # which never appear here (see DeviceUpdate).
     sim_number: str | None
     sim_carrier: str | None
+    # Media node this device is currently publishing video on, maintained
+    # automatically by the device server (see migration 0055). NULL = no fixed
+    # node (auto-distributed, e.g. JT1078). Read-only.
+    media_node_id: str | None = None
     vehicle_id: uuid.UUID | None
     notes: str | None
     status: str

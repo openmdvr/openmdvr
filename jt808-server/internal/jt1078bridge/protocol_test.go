@@ -65,14 +65,14 @@ func TestAuthorizePublish_AlwaysAuthorizes(t *testing.T) {
 	// never reachable from outside the docker network, see AuthorizePublish.
 	// It must not touch Postgres (pool is nil here).
 	b := newTestBridge()
-	if err := b.AuthorizePublish(context.Background(), jt1078InternalRTPApp, "13800000099_1"); err != nil {
+	if err := b.AuthorizePublish(context.Background(), "", jt1078InternalRTPApp, "13800000099_1"); err != nil {
 		t.Errorf("AuthorizePublish() = %v, want nil", err)
 	}
 }
 
 func TestHandleIdleStream(t *testing.T) {
 	b := newTestBridge()
-	b.active.MarkActive("13800000099_1", "http://zlm/rtp/13800000099_1.live.flv", 60, func() {})
+	b.active.MarkActive("13800000099_1", "http://zlm/rtp/13800000099_1.live.flv", 60, func() {}, "")
 
 	if !b.HandleIdleStream("13800000099", 1) {
 		t.Error("tracked = false for an active stream, want true")
@@ -87,7 +87,7 @@ func TestHandleStreamStopped_IsANoOp(t *testing.T) {
 	// this method only satisfies the interface and must never touch
 	// ActiveStreams (an existing entry stays intact after calling it).
 	b := newTestBridge()
-	b.active.MarkActive("13800000099_1", "url", 60, func() {})
+	b.active.MarkActive("13800000099_1", "url", 60, func() {}, "")
 	b.HandleStreamStopped(jt1078InternalRTPApp, "13800000099_1")
 	if _, active := b.active.Entry("13800000099_1"); !active {
 		t.Error("HandleStreamStopped (which must be a no-op) released an active entry")

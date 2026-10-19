@@ -45,7 +45,7 @@ _SELECT_COLUMNS = (
     "id, tenant_id, protocol, jt808_terminal_id, gt06_imei, label, vehicle_id, notes, status, last_seen_at, "
     "status_changed_by, status_changed_at, device_model_id, "
     "(SELECT dm.name FROM device_models dm WHERE dm.id = devices.device_model_id) AS device_model_name, "
-    "sim_number, sim_carrier, "
+    "sim_number, sim_carrier, media_node_id, "
     "ignition_on, ignition_changed_at, power_connected, power_changed_at"
 )
 
@@ -499,8 +499,9 @@ def _device_out(row) -> DeviceOut:
         device_model_name=row[13],
         sim_number=row[14],
         sim_carrier=row[15],
-        ignition_on=row[16],
-        ignition_changed_at=row[17].isoformat() if row[17] else None,
-        power_connected=row[18],
-        power_changed_at=row[19].isoformat() if row[19] else None,
+        media_node_id=row[16],
+        ignition_on=row[17],
+        ignition_changed_at=row[18].isoformat() if row[18] else None,
+        power_connected=row[19],
+        power_changed_at=row[20].isoformat() if row[20] else None,
     )

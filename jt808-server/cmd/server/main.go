@@ -58,33 +58,35 @@ func main() {
 	gt06Srv := gt06server.New(pool, cfg.GT06ListenAddr, cfg.GT06MaxConnections, gt06Registry)
 	gt06Dispatcher := gt06server.NewDispatcher(gt06Registry)
 
-	// active/zlm/tickets are the SHARED live video infrastructure (see
+	// active/media/tickets are the SHARED live video infrastructure (see
 	// internal/videobridge), built once here and passed by reference to EVERY
 	// protocol, so a single active-stream map and a single ticket store serve
 	// them all. Adding a video protocol means building it with these same
 	// objects and registering it in videobridge.NewDispatcher below -- never
 	// instantiating its own copy of this infrastructure.
+	//
+	// mediaPool is the media plane: one or more ZLMediaKit nodes (ZLM_NODES,
+	// or a single node synthesized from the legacy ZLM_* scalars). The bridge
+	// picks/learns a node per stream and acts on that node; single-node mode
+	// is a pool of length one, identical to before.
 	activeStreams := videobridge.NewActiveStreams()
-	zlmClient := videobridge.NewZLMClient(cfg.ZLMBaseURL, cfg.ZLMSecret)
+	mediaPool, err := videobridge.NewMediaPool(toNodeConfigs(cfg.MediaNodes))
+	if err != nil {
+		log.Fatalf("media pool: %v", err)
+	}
 	ticketStore := videobridge.NewTicketStore()
 
 	bridge := jt1078bridge.New(jt1078bridge.Config{
-		ListenAddr:           cfg.JT1078ListenAddr,
-		ListenPort:           cfg.JT1078ListenPort,
-		PublicIP:             cfg.PublicIP,
-		ZLMBaseURL:           cfg.ZLMBaseURL,
-		ZLMSecret:            cfg.ZLMSecret,
-		ZLMPlayURLFormat:     cfg.ZLMPlayURLFormat,
-		ZLMWebrtcPlayBaseURL: cfg.ZLMWebrtcPlayBaseURL,
-	}, registry, pool, activeStreams, zlmClient)
+		ListenAddr: cfg.JT1078ListenAddr,
+		ListenPort: cfg.JT1078ListenPort,
+		PublicIP:   cfg.PublicIP,
+	}, registry, pool, activeStreams, mediaPool)
 
 	gt06Video := gt06videobridge.New(gt06videobridge.Config{
-		GT06VideoApp:         cfg.GT06VideoApp,
-		ZLMGT06PlayBaseURL:   cfg.ZLMGT06PlayBaseURL,
-		ZLMWebrtcPlayBaseURL: cfg.ZLMWebrtcPlayBaseURL,
-	}, activeStreams, zlmClient, pool, gt06Dispatcher)
+		GT06VideoApp: cfg.GT06VideoApp,
+	}, activeStreams, mediaPool, pool, gt06Dispatcher)
 
-	videoDispatcher := videobridge.NewDispatcher(pool, ticketStore, zlmClient, bridge, gt06Video)
+	videoDispatcher := videobridge.NewDispatcher(pool, ticketStore, mediaPool, bridge, gt06Video)
 
 	// CENTRAL live view time meter (see videobridge.LiveMeter): one object
 	// shared by all protocols, like activeStreams/tickets. Closed at the end
@@ -211,4 +213,25 @@ func main() {
 		liveMeter.Close(10 * time.Second) // log.Fatalf does not run deferred calls
 		log.Fatalf("server: %v", err)
 	}
+}
+
+// toNodeConfigs maps the config package's media node descriptors into
+// videobridge.NodeConfig, keeping videobridge independent of the config
+// package (only cmd/server knows both).
+func toNodeConfigs(nodes []config.MediaNode) []videobridge.NodeConfig {
+	out := make([]videobridge.NodeConfig, 0, len(nodes))
+	for _, n := range nodes {
+		out = append(out, videobridge.NodeConfig{
+			ID:                n.ID,
+			BaseURL:           n.BaseURL,
+			Secret:            n.Secret,
+			RTPPushHost:       n.RTPPushHost,
+			FLVPlayURLFormat:  n.FLVPlayURLFormat,
+			GT06PlayBaseURL:   n.GT06PlayBaseURL,
+			WebRTCPlayBaseURL: n.WebRTCPlayBaseURL,
+			RTMPIngestHost:    n.RTMPIngestHost,
+			ExternIP:          n.ExternIP,
+		})
+	}
+	return out
 }

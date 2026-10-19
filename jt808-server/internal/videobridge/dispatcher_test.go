@@ -46,6 +46,14 @@ type fakeProtocol struct {
 	// (LiveViewClaimed) -- the snapshot must never cut it.
 	liveClaimed bool
 
+	// nodeForID/nodeForOK are what NodeFor returns, and lastPublishNode/
+	// lastNotFoundNode capture the nodeID the Dispatcher passed in (so a test
+	// can assert the mediaServerId was threaded through).
+	nodeForID        string
+	nodeForOK        bool
+	lastPublishNode  string
+	lastNotFoundNode string
+
 	publishCalled        bool
 	streamNotFoundCalled bool
 	streamStoppedCalled  bool
@@ -66,13 +74,15 @@ func (f *fakeProtocol) LookupDevice(ctx context.Context, tx pgx.Tx, deviceKey st
 	return db.Device{}, errors.New("fakeProtocol: LookupDevice not implemented for this test")
 }
 
-func (f *fakeProtocol) AuthorizePublish(ctx context.Context, app, stream string) error {
+func (f *fakeProtocol) AuthorizePublish(ctx context.Context, nodeID, app, stream string) error {
 	f.publishCalled = true
+	f.lastPublishNode = nodeID
 	return f.authorizePublishErr
 }
 
-func (f *fakeProtocol) HandleStreamNotFound(ctx context.Context, app, stream string) bool {
+func (f *fakeProtocol) HandleStreamNotFound(ctx context.Context, nodeID, app, stream string) bool {
 	f.streamNotFoundCalled = true
+	f.lastNotFoundNode = nodeID
 	return f.streamNotFoundAllow
 }
 
@@ -98,6 +108,10 @@ func (f *fakeProtocol) IsPublishing(deviceKey string, channel uint8) bool {
 	defer f.pubMu.Unlock()
 	f.isPublishingCalls++
 	return f.publishing
+}
+
+func (f *fakeProtocol) NodeFor(deviceKey string, channel uint8) (string, bool) {
+	return f.nodeForID, f.nodeForOK
 }
 
 func (f *fakeProtocol) setPublishing(v bool) {
@@ -264,6 +278,28 @@ func TestDispatcher_StreamNotFound_UnregisteredAppRejected(t *testing.T) {
 	rec := postJSON(t, mux, "/api/v1/on_stream_not_found", `{"app":"other","stream":"x"}`)
 	if decodeCode(t, rec)["code"].(float64) == 0 {
 		t.Error("unregistered app authorized")
+	}
+}
+
+// --- mediaServerId threading: the node a hook fired from reaches the protocol ---
+
+func TestDispatcher_Publish_PassesMediaServerIDToProtocol(t *testing.T) {
+	gt := &fakeProtocol{name: "gt06_video", app: "live"}
+	mux := newTestMux(gt)
+
+	postJSON(t, mux, "/api/v1/on_publish", `{"app":"live","stream":"0/imei-1","mediaServerId":"zlm-3"}`)
+	if gt.lastPublishNode != "zlm-3" {
+		t.Errorf("AuthorizePublish got node %q, want zlm-3 (the hook's mediaServerId)", gt.lastPublishNode)
+	}
+}
+
+func TestDispatcher_StreamNotFound_PassesMediaServerIDToProtocol(t *testing.T) {
+	gt := &fakeProtocol{name: "gt06_video", app: "live", streamNotFoundAllow: true}
+	mux := newTestMux(gt)
+
+	postJSON(t, mux, "/api/v1/on_stream_not_found", `{"app":"live","stream":"0/imei-1","mediaServerId":"zlm-7"}`)
+	if gt.lastNotFoundNode != "zlm-7" {
+		t.Errorf("HandleStreamNotFound got node %q, want zlm-7 (the hook's mediaServerId)", gt.lastNotFoundNode)
 	}
 }
 

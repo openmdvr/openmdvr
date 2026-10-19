@@ -2,6 +2,7 @@ package jt1078bridge
 
 import (
 	"context"
+	"log"
 
 	"github.com/jackc/pgx/v5"
 
@@ -44,19 +45,35 @@ func (b *Bridge) LookupDevice(ctx context.Context, tx pgx.Tx, deviceKey string) 
 // path is network isolation, not this hook. Critical security finding (F1):
 // the first version of the on_publish gate rejected any app other than the
 // GT06 video app, which would have broken ALL existing JT1078 video.
-func (b *Bridge) AuthorizePublish(ctx context.Context, app, stream string) error {
+func (b *Bridge) AuthorizePublish(ctx context.Context, nodeID, app, stream string) error {
 	return nil
 }
 
 // HandleStreamNotFound implements videobridge.Protocol -- JT1078 is pull: it
 // triggers its own signaling (0x9101, via RequestVideo) and allows waiting if
-// that succeeded.
-func (b *Bridge) HandleStreamNotFound(ctx context.Context, app, stream string) (allow bool) {
+// that succeeded. It places the RTP receiver ON THE NODE the player connected
+// to (nodeID = the hook's mediaServerId), so ingest and playback stay on the
+// same node in a multi-node media plane.
+func (b *Bridge) HandleStreamNotFound(ctx context.Context, nodeID, app, stream string) (allow bool) {
 	terminalID, channel, ok := parseStreamID(stream)
 	if !ok {
 		return false
 	}
-	_, _, _, _, err := b.RequestVideo(ctx, terminalID, channel)
+	node, found := b.media.Node(nodeID)
+	if !found {
+		// In a multi-node plane a hook mediaServerId that is not in the pool
+		// means that node's config.ini mediaServerId does not match its
+		// ZLM_NODES id -- placing ingest on a fallback node would strand the
+		// viewer (the stream would never appear on the node their player is
+		// on). Refuse loudly instead of silently serving the wrong node. In
+		// single-node mode the default IS the one node, so fall back quietly.
+		if b.media.Len() > 1 {
+			log.Printf("jt1078bridge: on_stream_not_found from unknown media node %q (not in ZLM_NODES) for %s -- refusing (fix that node's config.ini mediaServerId)", nodeID, stream)
+			return false
+		}
+		node = b.media.Default()
+	}
+	_, _, _, _, err := b.requestVideoOnNode(ctx, node, terminalID, channel)
 	return err == nil
 }
 
@@ -84,4 +101,15 @@ func (b *Bridge) IsPublishing(deviceKey string, channel uint8) bool {
 // which covers the case without this signal.
 func (b *Bridge) LiveViewClaimed(deviceKey string, channel uint8) bool {
 	return false
+}
+
+// NodeFor implements videobridge.Protocol -- the media node this stream was
+// placed on (recorded in the ActiveEntry when relay.go matched the device's
+// video). ok=false if there is no active entry.
+func (b *Bridge) NodeFor(deviceKey string, channel uint8) (nodeID string, ok bool) {
+	e, active := b.active.Entry(streamID(deviceKey, channel))
+	if !active {
+		return "", false
+	}
+	return e.NodeID, true
 }

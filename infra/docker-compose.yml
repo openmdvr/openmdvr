@@ -83,6 +83,14 @@ services:
       PUBLIC_IP: ${JT808_PUBLIC_IP:-127.0.0.1}
       ZLM_BASE_URL: "http://zlmediakit:80"
       ZLM_API_SECRET: ${ZLM_API_SECRET:?set ZLM_API_SECRET in infra/.env}
+      # Single-node id (synthesized node when ZLM_NODES is unset). Must match
+      # the zlmediakit service's ZLM_MEDIA_SERVER_ID.
+      ZLM_NODE_ID: ${ZLM_NODE_ID:-zlm-1}
+      # Multi-node media plane (OPTIONAL): a JSON array of ZLMediaKit nodes.
+      # Unset = single node synthesized from the ZLM_* scalars here (default,
+      # no change). See infra/.env.example for the JSON shape and how to add a
+      # second node.
+      ZLM_NODES: ${ZLM_NODES:-}
       # http://127.0.0.1/... only works in local dev (browser and Docker on the
       # same machine). In production use the public IP or domain; see
       # infra/.env.example.
@@ -210,6 +218,12 @@ services:
     entrypoint: ["/docker-entrypoint.sh"]
     environment:
       ZLM_API_SECRET: ${ZLM_API_SECRET:?set ZLM_API_SECRET in infra/.env}
+      # This node's id, stamped into every hook (mediaServerId). MUST match
+      # this node's id in the device server's ZLM_NODES (or ZLM_NODE_ID in
+      # single-node mode). Default zlm-1 matches the single-node default.
+      # For a second node, run another copy of this service with a different
+      # value (e.g. zlm-2) and its own ports -- see infra/.env.example.
+      ZLM_MEDIA_SERVER_ID: ${ZLM_MEDIA_SERVER_ID:-zlm-1}
       # Default 1 for local dev; set to 0 in production (apiDebug=1 logs
       # the playback ticket). See zlmediakit/config.ini.
       ZLM_API_DEBUG: ${ZLM_API_DEBUG:-1}

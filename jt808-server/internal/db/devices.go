@@ -90,6 +90,22 @@ func TouchLastSeen(ctx context.Context, tx pgx.Tx, deviceID uuid.UUID) error {
 	return nil
 }
 
+// SetDeviceMediaNode records the media node a device is currently publishing
+// its video on, learned from on_publish's mediaServerId. The platform sees
+// node distribution without anyone assigning it by hand -- there is nothing to
+// choose, the device picks its node by where it pushes and this just reflects
+// it. Only writes on a real change (IS DISTINCT FROM); nodeID is never empty
+// at the call site.
+func SetDeviceMediaNode(ctx context.Context, tx pgx.Tx, deviceID uuid.UUID, nodeID string) error {
+	_, err := tx.Exec(ctx,
+		`UPDATE devices SET media_node_id = $1 WHERE id = $2 AND media_node_id IS DISTINCT FROM $1`,
+		nodeID, deviceID)
+	if err != nil {
+		return fmt.Errorf("db: updating media_node_id: %w", err)
+	}
+	return nil
+}
+
 // UpdateDeviceStatus updates last_seen_at + ignition_on/power_connected in a
 // SINGLE write (avoids an extra round trip of TouchLastSeen plus a separate
 // UPDATE per position/alarm). Called from jt808server (every 0x0200 -- the

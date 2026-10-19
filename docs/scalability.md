@@ -94,6 +94,39 @@ Possible next steps, not yet implemented: batching several positions per
 transaction in the device server, and moving geofence evaluation for very
 large fleets out of the insert path.
 
+## Media nodes (video)
+
+Video is a different budget from telemetry and scales on a different axis.
+Playback fan-out to browsers, audio transcoding and RTMP ingest from push
+dashcams all run on the media server (ZLMediaKit), which is bandwidth- and
+CPU-bound per concurrent viewer, not per connected device. Concurrent viewers
+are always far fewer than the fleet size — nobody watches tens of thousands of
+cameras at once — and live video is on-demand, metered from real bytes and
+capped per tenant by server-enforced quotas.
+
+The media server runs as a **pool of one or more ZLMediaKit nodes**. The
+device server stays a single control plane: it chooses a node for each pulled
+(JT1078) stream, learns the node each pushed (GT06/RTMP) stream landed on from
+the `mediaServerId` in every media hook, records that affinity, and builds each
+stream's playback URL for the node that actually holds it. All nodes point
+their hooks back at the one device server, so tickets, quota metering and the
+active-stream registry stay authoritative in a single place.
+
+A single node is the default and needs no extra configuration — the legacy
+`ZLM_*` settings synthesize it. To add capacity:
+
+1. Run another ZLMediaKit instance with its own `ZLM_MEDIA_SERVER_ID` and its
+   own ports (RTMP 1935, WebRTC media 8880, the rtp_proxy range).
+2. List every node in `ZLM_NODES` (JSON), each with its id (matching that
+   node's `mediaServerId`), internal API base/secret, and browser-facing
+   playback bases.
+3. Add a reverse-proxy rule per node (`/media/<id>/*` → that node). A push
+   dashcam publishes to whichever node its `RSERVICE` host points at; the
+   platform records that node automatically (`devices.media_node_id`). JT1078
+   streams are spread across nodes automatically.
+
+See `infra/.env.example` for the exact `ZLM_NODES` shape.
+
 ## Reproducing
 
 ```bash

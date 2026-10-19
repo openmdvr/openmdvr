@@ -7,7 +7,6 @@ import (
 	"io"
 	"log"
 	"net"
-	"net/url"
 	"time"
 
 	"github.com/cuteLittleDevil/go-jt808/protocol/jt1078"
@@ -123,14 +122,11 @@ func (b *Bridge) handleVideoConn(ctx context.Context, conn net.Conn) {
 					log.Printf("jt1078bridge: %s: video connection without a pending request (sim=%s channel=%d), closing", remote, p.Sim, p.LogicChannel)
 					return
 				}
-				addr, err := zlmRTPAddr(b.cfg.ZLMBaseURL, entry.zlmPort)
-				if err != nil {
-					log.Printf("jt1078bridge: %s: could not resolve ZLMediaKit address: %v", remote, err)
-					return
-				}
+				node := b.media.NodeOrDefault(entry.nodeID)
+				addr := net.JoinHostPort(node.RTPPushHost, fmt.Sprintf("%d", entry.zlmPort))
 				zc, err := net.DialTimeout("tcp", addr, zlmDialTimeout)
 				if err != nil {
-					log.Printf("jt1078bridge: %s: could not connect to ZLMediaKit on port %d: %v", remote, entry.zlmPort, err)
+					log.Printf("jt1078bridge: %s: could not connect to ZLMediaKit node %s on port %d: %v", remote, node.ID, entry.zlmPort, err)
 					return
 				}
 				zlmConn = zc
@@ -142,9 +138,9 @@ func (b *Bridge) handleVideoConn(ctx context.Context, conn net.Conn) {
 				matched = true
 				activeStreamID = entry.streamID
 				cutoffCtx, cancel := context.WithCancel(context.Background())
-				b.active.MarkActive(activeStreamID, fmt.Sprintf(b.cfg.ZLMPlayURLFormat, activeStreamID), entry.maxSeconds, cancel)
-				go b.enforceLiveViewLimit(cutoffCtx, activeStreamID, p.Sim, p.LogicChannel, entry.maxSeconds)
-				log.Printf("jt1078bridge: %s: video matched to stream_id=%s (zlm port=%d, limit=%ds)", remote, entry.streamID, entry.zlmPort, entry.maxSeconds)
+				b.active.MarkActive(activeStreamID, fmt.Sprintf(node.FLVPlayURLFormat, activeStreamID), entry.maxSeconds, cancel, node.ID)
+				go b.enforceLiveViewLimit(cutoffCtx, activeStreamID, p.Sim, p.LogicChannel, entry.maxSeconds, node.ID)
+				log.Printf("jt1078bridge: %s: video matched to stream_id=%s (node=%s zlm port=%d, limit=%ds)", remote, entry.streamID, node.ID, entry.zlmPort, entry.maxSeconds)
 			}
 
 			frame, ok := reassembler.Feed(p)
@@ -182,22 +178,6 @@ func (b *Bridge) handleVideoConn(ctx context.Context, conn net.Conn) {
 // instead of a fixed default.
 func payloadTypeFor(_ *jt1078.Packet) uint8 {
 	return PayloadTypeH264
-}
-
-// zlmRTPAddr takes the host from the ZLMediaKit HTTP API base URL (e.g.
-// "http://zlmediakit:80") and combines it with the RTP port openRtpServer
-// assigned -- two DIFFERENT ports on the same host (the HTTP API one and the
-// one opened specifically for this stream).
-func zlmRTPAddr(baseURL string, rtpPort int) (string, error) {
-	u, err := url.Parse(baseURL)
-	if err != nil {
-		return "", fmt.Errorf("parsing ZLMBaseURL %q: %w", baseURL, err)
-	}
-	host := u.Hostname()
-	if host == "" {
-		return "", fmt.Errorf("ZLMBaseURL %q has no host", baseURL)
-	}
-	return net.JoinHostPort(host, fmt.Sprintf("%d", rtpPort)), nil
 }
 
 func logVideoReadError(remote string, err error) {

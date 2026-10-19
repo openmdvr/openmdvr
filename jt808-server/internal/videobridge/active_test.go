@@ -22,7 +22,7 @@ type fakeProtocolState struct {
 func TestActiveStreams_MarkActiveAuto_SetsAutoAndState(t *testing.T) {
 	a := NewActiveStreams()
 	state := fakeProtocolState{App: "live", Stream: "1/490154203237518"}
-	a.MarkActiveAuto("gt06:490154203237518:1", "http://zlm/live/1.live.flv", 60, func() {}, state)
+	a.MarkActiveAuto("gt06:490154203237518:1", "http://zlm/live/1.live.flv", 60, func() {}, state, "zlm-test")
 
 	e, ok := a.Entry("gt06:490154203237518:1")
 	if !ok {
@@ -41,7 +41,7 @@ func TestActiveStreams_MarkActive_LeavesStateNilAndAutoFalse(t *testing.T) {
 	// The JT1078 path (explicit request, never "auto") must leave no State --
 	// confirms the field is optional, not something every protocol fills.
 	a := NewActiveStreams()
-	a.MarkActive("13800000099_1", "url", 60, func() {})
+	a.MarkActive("13800000099_1", "url", 60, func() {}, "")
 
 	e, ok := a.Entry("13800000099_1")
 	if !ok {
@@ -59,7 +59,7 @@ func TestActiveStreams_ClaimAuto_ReplacesTimerAndClearsFlag(t *testing.T) {
 	a := NewActiveStreams()
 	oldCancelled := false
 	state := fakeProtocolState{App: "live", Stream: "1/490154203237518"}
-	a.MarkActiveAuto("gt06:490154203237518:1", "http://zlm/live/1.live.flv", 60, func() { oldCancelled = true }, state)
+	a.MarkActiveAuto("gt06:490154203237518:1", "http://zlm/live/1.live.flv", 60, func() { oldCancelled = true }, state, "zlm-test")
 
 	newCancelled := false
 	oldCancel, claimed := a.ClaimAuto("gt06:490154203237518:1", 60, func() { newCancelled = true })
@@ -93,7 +93,7 @@ func TestActiveStreams_ClaimAuto_FailsWhenNotAuto(t *testing.T) {
 	// An EXPLICIT request (plain MarkActive) must not be able to "claim
 	// itself" -- it already has its own real timer.
 	a := NewActiveStreams()
-	a.MarkActive("gt06:490154203237518:0", "url", 60, func() {})
+	a.MarkActive("gt06:490154203237518:0", "url", 60, func() {}, "")
 
 	_, claimed := a.ClaimAuto("gt06:490154203237518:0", 60, func() {})
 	if claimed {
@@ -115,7 +115,7 @@ func TestActiveStreams_ClaimAuto_SecondCallerLosesRace(t *testing.T) {
 	// cancel the FRESH timer the first one just set.
 	a := NewActiveStreams()
 	state := fakeProtocolState{App: "live", Stream: "1/490154203237518"}
-	a.MarkActiveAuto("gt06:490154203237518:1", "url", 60, func() {}, state)
+	a.MarkActiveAuto("gt06:490154203237518:1", "url", 60, func() {}, state, "zlm-test")
 
 	_, firstClaimed := a.ClaimAuto("gt06:490154203237518:1", 60, func() {})
 	if !firstClaimed {
@@ -133,8 +133,8 @@ func TestActiveStreams_SharedMapAcrossDifferentKeySchemes(t *testing.T) {
 	// a JT1078-shaped key ("<terminalID>_<ch>") and a GT06-shaped key
 	// ("gt06:<imei>:<ch>") in the SAME map.
 	a := NewActiveStreams()
-	a.MarkActive("13800000099_1", "jt1078-url", 60, func() {})
-	a.MarkActiveAuto("gt06:490154203237518:0", "gt06-url", 90, func() {}, fakeProtocolState{App: "live"})
+	a.MarkActive("13800000099_1", "jt1078-url", 60, func() {}, "")
+	a.MarkActiveAuto("gt06:490154203237518:0", "gt06-url", 90, func() {}, fakeProtocolState{App: "live"}, "zlm-test")
 
 	jt1078Entry, ok := a.Entry("13800000099_1")
 	if !ok || jt1078Entry.PlayURL != "jt1078-url" {

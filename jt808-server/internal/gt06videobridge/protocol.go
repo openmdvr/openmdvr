@@ -86,10 +86,24 @@ func (b *Bridge) StreamName(deviceKey string, channel uint8) string {
 //
 // The Dispatcher already guarantees this is only called for app==b.App(), so
 // no "does this belong to another protocol?" check is needed here.
-func (b *Bridge) AuthorizePublish(ctx context.Context, app, stream string) error {
+func (b *Bridge) AuthorizePublish(ctx context.Context, nodeID, app, stream string) error {
 	channel, imei, ok := extractGT06Stream(stream)
 	if !ok {
 		return fmt.Errorf("gt06videobridge: stream without canonical IMEI: %q", stream)
+	}
+
+	// In a multi-node plane, refuse a publish whose node we cannot address: if
+	// mediaServerId is not in the pool (that node's config.ini mediaServerId
+	// does not match its ZLM_NODES id), the playback URL and the server-side
+	// force-close would target the WRONG (default) node -- a black screen for
+	// viewers and a lost authoritative cut. Rejecting makes the device retry
+	// and surfaces the misconfig instead of tracking an unaddressable stream.
+	// In single-node mode the default IS the one node, so this never triggers.
+	if b.media != nil && b.media.Len() > 1 {
+		if _, known := b.media.Node(nodeID); !known {
+			log.Printf("gt06videobridge: on_publish from UNKNOWN media node mediaServerId=%q (not in ZLM_NODES) imei=%s -- refusing; set that node's config.ini mediaServerId to match its pool id", nodeID, imei)
+			return fmt.Errorf("unknown media node %q", nodeID)
+		}
 	}
 
 	// dev.Protocol must be 'gt06_video' (security finding F5): a plain GT06
@@ -122,8 +136,20 @@ func (b *Bridge) AuthorizePublish(ctx context.Context, app, stream string) error
 		return fmt.Errorf("device not active: %s", dev.Status)
 	}
 
-	log.Printf("gt06videobridge: on_publish authorized imei=%s channel=%d app=%s stream=%s", imei, channel, app, stream)
-	info := gt06StreamInfo{App: app, Stream: stream}
+	// Record which node this device is publishing on, so the platform sees the
+	// distribution automatically (no one assigns it by hand). Best-effort: a
+	// failure here never blocks the publish. Skipped for an unknown/default
+	// node (empty id).
+	if nodeID != "" {
+		if err := db.WithBypass(ctx, b.pool, func(ctx context.Context, tx pgx.Tx) error {
+			return db.SetDeviceMediaNode(ctx, tx, dev.ID, nodeID)
+		}); err != nil {
+			log.Printf("gt06videobridge: could not record media node %q for %s (non-fatal): %v", nodeID, imei, err)
+		}
+	}
+
+	log.Printf("gt06videobridge: on_publish authorized imei=%s channel=%d app=%s stream=%s node=%s", imei, channel, app, stream, nodeID)
+	info := gt06StreamInfo{App: app, Stream: stream, NodeID: nodeID}
 	if !b.wait.notify(imei, channel, info) {
 		// Nobody is waiting for this confirmation (the OTHER camera of the
 		// same command confirming first -- "RTMP,ON,INOUT#" starts both at
@@ -156,7 +182,7 @@ func (b *Bridge) AuthorizePublish(ctx context.Context, app, stream string) error
 // and never triggers anything here (unlike a pull protocol): it only answers
 // "wait" (allow=true) if there is already an active/pending entry for this
 // device/channel, the real race between on_publish and on_stream_not_found.
-func (b *Bridge) HandleStreamNotFound(ctx context.Context, app, stream string) (allow bool) {
+func (b *Bridge) HandleStreamNotFound(ctx context.Context, nodeID, app, stream string) (allow bool) {
 	channel, imei, ok := extractGT06Stream(stream)
 	if !ok {
 		log.Printf("gt06videobridge: on_stream_not_found with unrecognized stream_id: %q", stream)
@@ -251,6 +277,17 @@ func (b *Bridge) IsPublishing(deviceKey string, channel uint8) bool {
 func (b *Bridge) LiveViewClaimed(deviceKey string, channel uint8) bool {
 	e, active := b.active.Entry(gt06StreamKey(deviceKey, channel))
 	return active && !e.Auto
+}
+
+// NodeFor implements videobridge.Protocol -- the media node on_publish
+// confirmed this stream landed on (stored in the ActiveEntry's NodeID).
+// ok=false if there is no active entry.
+func (b *Bridge) NodeFor(deviceKey string, channel uint8) (nodeID string, ok bool) {
+	e, active := b.active.Entry(gt06StreamKey(deviceKey, channel))
+	if !active {
+		return "", false
+	}
+	return e.NodeID, true
 }
 
 // PhotoCapturer asks the device for a native photo (alarmclip.Bridge.

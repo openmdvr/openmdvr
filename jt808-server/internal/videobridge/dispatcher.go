@@ -29,10 +29,11 @@ type Dispatcher struct {
 	byName  map[string]Protocol
 	tickets *TicketStore
 	pool    *pgxpool.Pool
-	// zlm is the SAME *ZLMClient each Protocol already holds by reference
-	// (built once in cmd/server/main.go); handleSnapshot (snapshot.go) needs
-	// it to call getSnap / force-close streams.
-	zlm *ZLMClient
+	// media is the SAME *MediaPool every Protocol holds by reference (built
+	// once in cmd/server/main.go). handleSnapshot (snapshot.go) resolves the
+	// node a stream lives on (Protocol.NodeFor) and uses that node's client to
+	// getSnap / force-close. With a single node this is just that one node.
+	media *MediaPool
 	// snapshotCache: latest real photo per device+channel, shared across ALL
 	// sessions/tenants -- see snapshot_cache.go. Avoids repeating a physical
 	// capture (waking up the device) when another session already has a
@@ -42,9 +43,9 @@ type Dispatcher struct {
 	meter *LiveMeter
 }
 
-func NewDispatcher(pool *pgxpool.Pool, tickets *TicketStore, zlm *ZLMClient, protocols ...Protocol) *Dispatcher {
+func NewDispatcher(pool *pgxpool.Pool, tickets *TicketStore, media *MediaPool, protocols ...Protocol) *Dispatcher {
 	d := &Dispatcher{
-		byApp: map[string]Protocol{}, byName: map[string]Protocol{}, tickets: tickets, pool: pool, zlm: zlm,
+		byApp: map[string]Protocol{}, byName: map[string]Protocol{}, tickets: tickets, pool: pool, media: media,
 		snapshotCache: newSnapshotCacheStore(),
 	}
 	for _, p := range protocols {
@@ -122,8 +123,9 @@ func (d *Dispatcher) handleMintTicket(w http.ResponseWriter, r *http.Request) {
 // --- POST /api/v1/on_publish ---
 
 type zlmPublishBody struct {
-	App    string `json:"app"`
-	Stream string `json:"stream"`
+	App           string `json:"app"`
+	Stream        string `json:"stream"`
+	MediaServerID string `json:"mediaServerId"`
 }
 
 // handlePublish is the authorization gate for EVERY publish attempt
@@ -143,7 +145,7 @@ func (d *Dispatcher) handlePublish(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"code": -1, "msg": "unauthorized"})
 		return
 	}
-	if err := proto.AuthorizePublish(r.Context(), req.App, req.Stream); err != nil {
+	if err := proto.AuthorizePublish(r.Context(), req.MediaServerID, req.App, req.Stream); err != nil {
 		log.Printf("videobridge: on_publish rejected (%s): app=%q stream=%q: %v", proto.Name(), req.App, req.Stream, err)
 		writeJSON(w, http.StatusOK, map[string]any{"code": -1, "msg": "unauthorized"})
 		return
@@ -184,8 +186,9 @@ func (d *Dispatcher) handleStreamChanged(w http.ResponseWriter, r *http.Request)
 // --- POST /api/v1/on_stream_not_found ---
 
 type zlmStreamNotFoundBody struct {
-	App    string `json:"app"`
-	Stream string `json:"stream"`
+	App           string `json:"app"`
+	Stream        string `json:"stream"`
+	MediaServerID string `json:"mediaServerId"`
 }
 
 // handleStreamNotFound fires when an AUTHORIZED client asks to play a stream
@@ -205,7 +208,7 @@ func (d *Dispatcher) handleStreamNotFound(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusOK, map[string]any{"code": -1})
 		return
 	}
-	if !proto.HandleStreamNotFound(r.Context(), req.App, req.Stream) {
+	if !proto.HandleStreamNotFound(r.Context(), req.MediaServerID, req.App, req.Stream) {
 		writeJSON(w, http.StatusOK, map[string]any{"code": -1})
 		return
 	}

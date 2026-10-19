@@ -28,23 +28,13 @@ type Config struct {
 	// ListenPort is the TCP port reported to the device in the 0x9101 (must
 	// match ListenAddr's real port).
 	ListenPort uint16
-
-	ZLMBaseURL string
-	ZLMSecret  string
-	// ZLMPlayURLFormat is a template with a single %s (the stream_id) used to
-	// build the playback URL returned to the requester -- e.g.
-	// "http://localhost/rtp/%s.live.flv" (see the "URL rules" page of the
-	// ZLMediaKit wiki for the available variants: .live.flv, .live.mp4,
-	// .m3u8, etc.)
-	//
-	// Legacy HTTP-FLV/mpegts.js path, kept until WebRTC fully replaces it.
-	ZLMPlayURLFormat string
-	// ZLMWebrtcPlayBaseURL is the public HTTP base (scheme+host, no trailing
-	// slash) used to build the WHEP signaling URL -- see webrtcPlayURL()
-	// below. Same idea as ZLMPlayURLFormat, but WHEP uses query params
-	// (?app=&stream=) instead of a %s path template.
-	ZLMWebrtcPlayBaseURL string
 }
+
+// The per-node ZLMediaKit endpoints (API base/secret, RTP push host, FLV and
+// WebRTC playback bases) used to live here as scalars. They are now per media
+// node in videobridge.MediaNode (resolved from the *videobridge.MediaPool this
+// bridge holds), so a single JT1078 stream can be placed on any node and its
+// playback URL points at that node. Single-node mode is a pool of length one.
 
 // Bridge orchestrates signaling (0x9101 to the device, via the already open
 // JT808 session) and video ingest (incoming JT1078 -> RTP into ZLMediaKit).
@@ -56,7 +46,7 @@ type Bridge struct {
 	// meter is the central live-view time meter (SetLiveMeter).
 	meter    *videobridge.LiveMeter
 	cfg      Config
-	zlm      *videobridge.ZLMClient
+	media    *videobridge.MediaPool
 	sessions *session.Registry
 	pending  *pendingRequests
 	active   *videobridge.ActiveStreams
@@ -71,10 +61,10 @@ type Bridge struct {
 // SAME *ActiveStreams every other registered video protocol sees -- keys
 // never collide across protocols -- and the SAME *ZLMClient), built once in
 // cmd/server/main.go, never instances owned by this package.
-func New(cfg Config, sessions *session.Registry, pool *pgxpool.Pool, active *videobridge.ActiveStreams, zlm *videobridge.ZLMClient) *Bridge {
+func New(cfg Config, sessions *session.Registry, pool *pgxpool.Pool, active *videobridge.ActiveStreams, media *videobridge.MediaPool) *Bridge {
 	return &Bridge{
 		cfg:      cfg,
-		zlm:      zlm,
+		media:    media,
 		sessions: sessions,
 		pending:  newPendingRequests(),
 		active:   active,
@@ -119,22 +109,32 @@ func (e ErrLiveViewQuotaExhausted) Error() string {
 	return fmt.Sprintf("jt1078bridge: terminal %s: monthly live-view quota exhausted", e.TerminalID)
 }
 
-// webrtcPlayURL builds the WHEP signaling URL for a known stream_id. Pure
-// function, with no embedded ticket (the API adds that, same pattern as for
-// the legacy FLV `url`: this bridge never knows a video request's ticket, it
-// only VALIDATES it when ZLMediaKit forwards it via on_play).
-func (b *Bridge) webrtcPlayURL(id string) string {
-	return fmt.Sprintf("%s/index/api/whep?app=%s&stream=%s", b.cfg.ZLMWebrtcPlayBaseURL, jt1078InternalRTPApp, id)
+// webrtcPlayURL builds the WHEP signaling URL for a known stream_id on a
+// specific media node. Pure function, with no embedded ticket (the API adds
+// that, same pattern as for the legacy FLV `url`: this bridge never knows a
+// video request's ticket, it only VALIDATES it when ZLMediaKit forwards it via
+// on_play).
+func (b *Bridge) webrtcPlayURL(node *videobridge.MediaNode, id string) string {
+	return fmt.Sprintf("%s/index/api/whep?app=%s&stream=%s", node.WebRTCPlayBaseURL, jt1078InternalRTPApp, id)
 }
 
-// RequestVideo asks ZLMediaKit for a new RTP receiver for this
-// device/channel and sends the device a 0x9101 telling it to connect to THIS
-// bridge (not to ZLMediaKit directly -- see the package comment in rtp.go
-// for why). Returns the playback URLs, the tenant's PER-SESSION seconds
-// limit (informational for the client -- the REAL cut is done server-side by
-// enforceLiveViewLimit, whatever the client does with this value), and the
-// remaining MONTHLY quota in seconds (also informational).
+// RequestVideo picks a media node (round-robin over the pool; a single-node
+// deployment always gets that one node) and places the stream there. See
+// requestVideoOnNode for the full flow.
 func (b *Bridge) RequestVideo(ctx context.Context, terminalID string, channel uint8) (playURL string, webrtcURL string, maxSeconds int, quotaRemainingSeconds int, err error) {
+	return b.requestVideoOnNode(ctx, nil, terminalID, channel)
+}
+
+// requestVideoOnNode asks ZLMediaKit for a new RTP receiver for this
+// device/channel ON A SPECIFIC media node and sends the device a 0x9101
+// telling it to connect to THIS bridge (not to ZLMediaKit directly -- see the
+// package comment in rtp.go for why). When preferred is nil the node is chosen
+// from the pool (new request from the API); HandleStreamNotFound passes the
+// node the player connected to, so ingest and playback stay on the same node.
+// Returns the playback URLs, the tenant's PER-SESSION seconds limit
+// (informational -- the REAL cut is server-side in enforceLiveViewLimit) and
+// the remaining MONTHLY quota in seconds (also informational).
+func (b *Bridge) requestVideoOnNode(ctx context.Context, preferred *videobridge.MediaNode, terminalID string, channel uint8) (playURL string, webrtcURL string, maxSeconds int, quotaRemainingSeconds int, err error) {
 	id := streamID(terminalID, channel)
 
 	// If the device is ALREADY streaming this stream, do not reopen anything:
@@ -147,6 +147,7 @@ func (b *Bridge) RequestVideo(ctx context.Context, terminalID string, channel ui
 	// time-limit clock: the limit is per device stream session and is not
 	// extended because someone asks for the same URL again.
 	if e, ok := b.active.Entry(id); ok {
+		node := b.media.NodeOrDefault(e.NodeID)
 		_, quotaRemainingSeconds, err := b.tenantVideoLimits(ctx, terminalID)
 		if err != nil {
 			log.Printf("jt1078bridge: could not resolve remaining monthly quota for %s (non-fatal, stream already active): %v", terminalID, err)
@@ -162,7 +163,7 @@ func (b *Bridge) RequestVideo(ctx context.Context, terminalID string, channel ui
 			log.Printf("jt1078bridge: %s already active but monthly quota exhausted, rejecting request (the stream is cut on the next recheck)", terminalID)
 			return "", "", 0, 0, ErrLiveViewQuotaExhausted{TerminalID: terminalID}
 		}
-		return e.PlayURL, b.webrtcPlayURL(id), e.MaxSeconds, quotaRemainingSeconds, nil
+		return e.PlayURL, b.webrtcPlayURL(node, id), e.MaxSeconds, quotaRemainingSeconds, nil
 	}
 
 	sess, ok := b.sessions.Get(terminalID)
@@ -181,23 +182,47 @@ func (b *Bridge) RequestVideo(ctx context.Context, terminalID string, channel ui
 		return "", "", 0, 0, ErrLiveViewQuotaExhausted{TerminalID: terminalID}
 	}
 
+	node := preferred
+	if node == nil {
+		// Stickiness: if a request for this same stream is already in flight
+		// (receiver opened, the device's RTP not yet connected), reuse its
+		// node so a concurrent second viewer lands on the SAME node and
+		// shares the one stream. Without this, round-robin Pick could choose a
+		// different node, orphaning the first receiver and leaving the first
+		// viewer's player waiting on a node that never gets the stream. This
+		// collapses the concurrent case back to single-node-equivalent
+		// behavior (CloseRTPServer below then reuses the same stream_id on the
+		// same node).
+		if pend, ok := b.pending.peek(terminalID, channel); ok {
+			if n, found := b.media.Node(pend.nodeID); found {
+				node = n
+			}
+		}
+	}
+	if node == nil {
+		node = b.media.Pick(terminalID)
+	}
+
 	// Close any previous receiver for the same stream_id before opening a new
 	// one -- a repeated request (user reloaded the video page) must not leave
 	// orphan receivers piling up in ZLM.
-	if err := b.zlm.CloseRTPServer(ctx, id); err != nil {
-		log.Printf("jt1078bridge: closing previous RTP receiver for %s (non-fatal): %v", id, err)
+	if err := node.Client.CloseRTPServer(ctx, id); err != nil {
+		log.Printf("jt1078bridge: closing previous RTP receiver for %s on node %s (non-fatal): %v", id, node.ID, err)
 	}
 
-	opened, err := b.zlm.OpenRTPServer(ctx, id, 0)
+	opened, err := node.Client.OpenRTPServer(ctx, id, 0)
 	if err != nil {
-		return "", "", 0, 0, fmt.Errorf("jt1078bridge: opening RTP receiver in ZLMediaKit: %w", err)
+		b.media.SetHealthy(node.ID, false)
+		return "", "", 0, 0, fmt.Errorf("jt1078bridge: opening RTP receiver in ZLMediaKit node %s: %w", node.ID, err)
 	}
+	b.media.SetHealthy(node.ID, true)
 
 	b.pending.put(terminalID, channel, pendingEntry{
 		streamID:   id,
 		zlmPort:    opened.Port,
 		createdAt:  time.Now(),
 		maxSeconds: maxSeconds,
+		nodeID:     node.ID,
 	})
 
 	p9101 := &model.P0x9101{
@@ -213,7 +238,7 @@ func (b *Bridge) RequestVideo(ctx context.Context, terminalID string, channel ui
 		return "", "", 0, 0, fmt.Errorf("jt1078bridge: sending 0x9101 to %s: %w", terminalID, err)
 	}
 
-	return fmt.Sprintf(b.cfg.ZLMPlayURLFormat, id), b.webrtcPlayURL(id), maxSeconds, quotaRemainingSeconds, nil
+	return fmt.Sprintf(node.FLVPlayURLFormat, id), b.webrtcPlayURL(node, id), maxSeconds, quotaRemainingSeconds, nil
 }
 
 // tenantVideoLimits resolves terminal_id -> device -> tenant -> per-session
@@ -249,7 +274,7 @@ func (b *Bridge) SetLiveMeter(m *videobridge.LiveMeter) {
 // and here is the intentional cut. If the stream ends early for any other
 // reason, ActiveStreams.MarkInactive cancels ctx and this goroutine does
 // nothing.
-func (b *Bridge) enforceLiveViewLimit(ctx context.Context, id string, terminalID string, channel uint8, seconds int) {
+func (b *Bridge) enforceLiveViewLimit(ctx context.Context, id string, terminalID string, channel uint8, seconds int, nodeID string) {
 	// A JT1078 stream only exists if a viewer requested it (0x9101), so it
 	// is always billable. The central meter keeps count and signals via
 	// quotaCut if the tenant's balance runs out (videobridge.LiveMeter).
@@ -292,8 +317,9 @@ loop:
 		}
 	}
 	log.Printf("jt1078bridge: cutting %s: %s", id, reason)
-	if err := b.zlm.CloseRTPServer(context.Background(), id); err != nil {
-		log.Printf("jt1078bridge: closing %s: %v", id, err)
+	node := b.media.NodeOrDefault(nodeID)
+	if err := node.Client.CloseRTPServer(context.Background(), id); err != nil {
+		log.Printf("jt1078bridge: closing %s on node %s: %v", id, node.ID, err)
 	}
 	b.active.MarkInactive(id)
 }

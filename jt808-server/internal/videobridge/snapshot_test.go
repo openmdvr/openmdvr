@@ -95,6 +95,18 @@ func newFakeZLMSequenced(t *testing.T, snapResps []fakeZLMResponse) (*ZLMClient,
 	return &ZLMClient{baseURL: srv.URL, secret: "test-secret", http: srv.Client()}, log
 }
 
+// singleNodePool wraps a (fake) ZLMClient in a one-node MediaPool, the way a
+// single-node deployment runs. The fakeProtocol's NodeFor returns ("", false)
+// by default, which resolves to this default node -- so the snapshot flow
+// talks to the fake ZLM exactly as before the media pool existed.
+func singleNodePool(zlm *ZLMClient) *MediaPool {
+	return &MediaPool{
+		nodes:     map[string]*MediaNode{"zlm-test": {ID: "zlm-test", Client: zlm}},
+		order:     []string{"zlm-test"},
+		unhealthy: map[string]bool{},
+	}
+}
+
 func TestHandleSnapshot_WaitsForPublishThenReturnsRealImage(t *testing.T) {
 	shrinkSnapshotTimers(t)
 	realJPEG := []byte("\xff\xd8\xff fake jpeg bytes")
@@ -102,7 +114,7 @@ func TestHandleSnapshot_WaitsForPublishThenReturnsRealImage(t *testing.T) {
 
 	proto := &fakeProtocol{name: "gt06_video", app: "live", streamName: "0/imei-1", idleStreamTracked: true}
 	tickets := NewTicketStore()
-	d := NewDispatcher(nil, tickets, zlm, proto)
+	d := NewDispatcher(nil, tickets, singleNodePool(zlm), proto)
 	mux := http.NewServeMux()
 	d.RegisterRoutes(mux)
 
@@ -141,7 +153,7 @@ func TestHandleSnapshot_NeverPublishing_TimesOut(t *testing.T) {
 	zlm, calls := newFakeZLM(t, fakeZLMResponse{contentType: "image/jpeg", body: []byte("should not be called")})
 
 	proto := &fakeProtocol{name: "gt06_video", app: "live", streamName: "0/imei-1", publishing: false}
-	d := NewDispatcher(nil, NewTicketStore(), zlm, proto)
+	d := NewDispatcher(nil, NewTicketStore(), singleNodePool(zlm), proto)
 	mux := http.NewServeMux()
 	d.RegisterRoutes(mux)
 
@@ -168,7 +180,7 @@ func TestHandleSnapshot_FallbackImageDetected(t *testing.T) {
 	zlm, calls := newFakeZLM(t, fakeZLMResponse{contentType: "image/png", body: []byte("fake png fallback")})
 
 	proto := &fakeProtocol{name: "gt06_video", app: "live", streamName: "0/imei-1", publishing: true, idleStreamTracked: true}
-	d := NewDispatcher(nil, NewTicketStore(), zlm, proto)
+	d := NewDispatcher(nil, NewTicketStore(), singleNodePool(zlm), proto)
 	mux := http.NewServeMux()
 	d.RegisterRoutes(mux)
 
@@ -205,7 +217,7 @@ func TestHandleSnapshot_RetriesOnceOnFallbackThenSucceeds(t *testing.T) {
 	})
 
 	proto := &fakeProtocol{name: "gt06_video", app: "live", streamName: "1/imei-1", publishing: true, idleStreamTracked: true}
-	d := NewDispatcher(nil, NewTicketStore(), zlm, proto)
+	d := NewDispatcher(nil, NewTicketStore(), singleNodePool(zlm), proto)
 	mux := http.NewServeMux()
 	d.RegisterRoutes(mux)
 
@@ -243,7 +255,7 @@ func TestHandleSnapshot_CacheHit_SkipsRealCaptureOnSecondRequest(t *testing.T) {
 	zlm, calls := newFakeZLM(t, fakeZLMResponse{contentType: "image/jpeg", body: realJPEG})
 
 	proto := &fakeProtocol{name: "gt06_video", app: "live", streamName: "0/imei-1", publishing: true, idleStreamTracked: true}
-	d := NewDispatcher(nil, NewTicketStore(), zlm, proto)
+	d := NewDispatcher(nil, NewTicketStore(), singleNodePool(zlm), proto)
 	mux := http.NewServeMux()
 	d.RegisterRoutes(mux)
 
@@ -296,7 +308,7 @@ func TestSnapshotCache_ExpiresAfterTTL(t *testing.T) {
 	zlm, calls := newFakeZLM(t, fakeZLMResponse{contentType: "image/jpeg", body: realJPEG})
 
 	proto := &fakeProtocol{name: "gt06_video", app: "live", streamName: "0/imei-1", publishing: true, idleStreamTracked: true}
-	d := NewDispatcher(nil, NewTicketStore(), zlm, proto)
+	d := NewDispatcher(nil, NewTicketStore(), singleNodePool(zlm), proto)
 	mux := http.NewServeMux()
 	d.RegisterRoutes(mux)
 	body := `{"tenantId":"t1","protocol":"gt06_video","deviceKey":"imei-1","channel":0}`
@@ -328,7 +340,7 @@ func TestHandleSnapshotCache_HitAfterRealCapture(t *testing.T) {
 	realJPEG := []byte("\xff\xd8\xff fake jpeg bytes")
 	zlm, _ := newFakeZLM(t, fakeZLMResponse{contentType: "image/jpeg", body: realJPEG})
 	proto := &fakeProtocol{name: "gt06_video", app: "live", streamName: "0/imei-1", publishing: true, idleStreamTracked: true}
-	d := NewDispatcher(nil, NewTicketStore(), zlm, proto)
+	d := NewDispatcher(nil, NewTicketStore(), singleNodePool(zlm), proto)
 	mux := http.NewServeMux()
 	d.RegisterRoutes(mux)
 
@@ -382,7 +394,7 @@ func TestHandleSnapshot_DoesNotCutStreamClaimedForLiveView(t *testing.T) {
 	shrinkSnapshotTimers(t)
 	zlm, calls := newFakeZLM(t, fakeZLMResponse{contentType: "image/jpeg", body: []byte("\xff\xd8 jpeg")})
 	proto := &fakeProtocol{name: "gt06_video", app: "live", streamName: "0/imei-1", idleStreamTracked: true, publishing: true, liveClaimed: true}
-	d := NewDispatcher(nil, NewTicketStore(), zlm, proto)
+	d := NewDispatcher(nil, NewTicketStore(), singleNodePool(zlm), proto)
 	mux := http.NewServeMux()
 	d.RegisterRoutes(mux)
 
@@ -402,7 +414,7 @@ func TestHandleSnapshot_DoesNotCutStreamWithViewers(t *testing.T) {
 	zlm, calls := newFakeZLM(t, fakeZLMResponse{contentType: "image/jpeg", body: []byte("\xff\xd8 jpeg")})
 	calls.readerCount = 1
 	proto := &fakeProtocol{name: "gt06_video", app: "live", streamName: "0/imei-1", idleStreamTracked: true, publishing: true}
-	d := NewDispatcher(nil, NewTicketStore(), zlm, proto)
+	d := NewDispatcher(nil, NewTicketStore(), singleNodePool(zlm), proto)
 	mux := http.NewServeMux()
 	d.RegisterRoutes(mux)
 

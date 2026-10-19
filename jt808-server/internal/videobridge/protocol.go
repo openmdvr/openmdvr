@@ -58,15 +58,21 @@ type Protocol interface {
 	// outside the docker network). A push protocol like GT06 validates for
 	// real (device protocol, active tenant) and keeps its own internal
 	// bookkeeping, never exposed to this package.
-	AuthorizePublish(ctx context.Context, app, stream string) error
+	//
+	// nodeID is the media node the push landed on (the hook's mediaServerId).
+	// A push protocol records it so the stream's playback URL and later
+	// close/snapshot act on the SAME node that holds the stream; a pull
+	// protocol ignores it.
+	AuthorizePublish(ctx context.Context, nodeID, app, stream string) error
 
 	// HandleStreamNotFound reacts to on_stream_not_found. A pull protocol
-	// (JT1078) triggers its own RequestVideo and returns allow=true on
-	// success. A push protocol (GT06) never triggers anything: it only
-	// returns allow=true if there is ALREADY an active/pending entry for that
-	// device/channel (the real race between on_publish and
+	// (JT1078) triggers its own RequestVideo ON THE NODE the player connected
+	// to (nodeID, the hook's mediaServerId) and returns allow=true on success.
+	// A push protocol (GT06) never triggers anything and ignores nodeID: it
+	// only returns allow=true if there is ALREADY an active/pending entry for
+	// that device/channel (the real race between on_publish and
 	// on_stream_not_found).
-	HandleStreamNotFound(ctx context.Context, app, stream string) (allow bool)
+	HandleStreamNotFound(ctx context.Context, nodeID, app, stream string) (allow bool)
 
 	// HandleStreamStopped reacts to on_stream_changed(regist=false): a stream
 	// that stopped publishing on the device side. No-op for a pull protocol
@@ -99,4 +105,13 @@ type Protocol interface {
 	// or about to watch -- otherwise the preview photo would cut the live
 	// video of the same camera being opened.
 	LiveViewClaimed(deviceKey string, channel uint8) bool
+
+	// NodeFor is a PURE query: the media node id this device/channel's active
+	// stream lives on, as recorded when the stream was placed (pull) or
+	// confirmed by on_publish (push). ok=false if there is no active entry.
+	// The snapshot flow uses it to call getSnap / force-close on the RIGHT
+	// node in a multi-node media plane; with a single node it always resolves
+	// to that node. Agnostic: every protocol stores the node on its
+	// ActiveEntry the same way.
+	NodeFor(deviceKey string, channel uint8) (nodeID string, ok bool)
 }

@@ -4,10 +4,28 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
 )
+
+// MediaNode describes one ZLMediaKit media node. ID must equal the
+// `mediaServerId` in that node's config.ini (how every ZLM hook tells the
+// process which node fired it). A single-node deployment has exactly one of
+// these, synthesized from the legacy ZLM_* scalars when ZLM_NODES is unset --
+// so nothing changes for existing installs.
+type MediaNode struct {
+	ID                string `json:"id"`
+	BaseURL           string `json:"base_url"`
+	Secret            string `json:"secret"`
+	RTPPushHost       string `json:"rtp_push_host"`
+	FLVPlayURLFormat  string `json:"flv_play_url_format"`
+	GT06PlayBaseURL   string `json:"gt06_play_base_url"`
+	WebRTCPlayBaseURL string `json:"webrtc_play_base_url"`
+	RTMPIngestHost    string `json:"rtmp_ingest_host"`
+	ExternIP          string `json:"extern_ip"`
+}
 
 type Config struct {
 	// ListenAddr is the TCP address where the server accepts JT808 device
@@ -65,6 +83,13 @@ type Config struct {
 	// slash) used to build the WHEP signaling URL for live video -- shared by
 	// jt1078bridge and gt06videobridge.
 	ZLMWebrtcPlayBaseURL string
+
+	// MediaNodes is the media plane: one or more ZLMediaKit nodes. Built in
+	// Load() either from ZLM_NODES (JSON array) or, when that is unset, as a
+	// single node synthesized from the ZLM_* scalars above (default
+	// single-node mode, identical behavior to before this field existed). The
+	// first element is the default node.
+	MediaNodes []MediaNode
 
 	// --- GT06 integration ---
 
@@ -164,10 +189,76 @@ func Load() (Config, error) {
 	if cfg.PGPassword == "" {
 		return Config{}, fmt.Errorf("config: APP_USER_PASSWORD is not set")
 	}
-	if cfg.ZLMSecret == "" {
-		return Config{}, fmt.Errorf("config: ZLM_API_SECRET is not set")
+
+	nodes, err := loadMediaNodes(cfg)
+	if err != nil {
+		return Config{}, err
 	}
+	cfg.MediaNodes = nodes
+
 	return cfg, nil
+}
+
+// loadMediaNodes builds the media plane. ZLM_NODES (JSON array) takes
+// precedence for multi-node; when it is unset or empty, a single node is
+// synthesized from the legacy ZLM_* scalars so a single-server install needs
+// no new configuration. Fails fast on invalid JSON or a node missing its id or
+// secret -- a misconfigured media plane must stop the process at startup.
+func loadMediaNodes(cfg Config) ([]MediaNode, error) {
+	raw := os.Getenv("ZLM_NODES")
+	if raw == "" {
+		// Single-node synthesis from the legacy scalars.
+		if cfg.ZLMSecret == "" {
+			return nil, fmt.Errorf("config: ZLM_API_SECRET is not set")
+		}
+		return []MediaNode{{
+			ID:                getEnv("ZLM_NODE_ID", "zlm-1"),
+			BaseURL:           cfg.ZLMBaseURL,
+			Secret:            cfg.ZLMSecret,
+			FLVPlayURLFormat:  cfg.ZLMPlayURLFormat,
+			GT06PlayBaseURL:   cfg.ZLMGT06PlayBaseURL,
+			WebRTCPlayBaseURL: cfg.ZLMWebrtcPlayBaseURL,
+			ExternIP:          getEnv("ZLM_EXTERN_IP", ""),
+		}}, nil
+	}
+
+	var nodes []MediaNode
+	if err := json.Unmarshal([]byte(raw), &nodes); err != nil {
+		return nil, fmt.Errorf("config: ZLM_NODES is not valid JSON: %w", err)
+	}
+	if len(nodes) == 0 {
+		return nil, fmt.Errorf("config: ZLM_NODES is an empty array")
+	}
+	seen := make(map[string]bool, len(nodes))
+	for i := range nodes {
+		n := &nodes[i]
+		if n.ID == "" {
+			return nil, fmt.Errorf("config: ZLM_NODES[%d] has no id", i)
+		}
+		if seen[n.ID] {
+			return nil, fmt.Errorf("config: ZLM_NODES has duplicate id %q", n.ID)
+		}
+		seen[n.ID] = true
+		if n.Secret == "" {
+			return nil, fmt.Errorf("config: ZLM_NODES node %q has no secret", n.ID)
+		}
+		if n.BaseURL == "" {
+			return nil, fmt.Errorf("config: ZLM_NODES node %q has no base_url", n.ID)
+		}
+		// Fall back to the shared scalars for the browser-facing templates a
+		// node omits, so a multi-node config only needs to spell out what
+		// differs per node.
+		if n.FLVPlayURLFormat == "" {
+			n.FLVPlayURLFormat = cfg.ZLMPlayURLFormat
+		}
+		if n.GT06PlayBaseURL == "" {
+			n.GT06PlayBaseURL = cfg.ZLMGT06PlayBaseURL
+		}
+		if n.WebRTCPlayBaseURL == "" {
+			n.WebRTCPlayBaseURL = cfg.ZLMWebrtcPlayBaseURL
+		}
+	}
+	return nodes, nil
 }
 
 func getEnv(key, fallback string) string {

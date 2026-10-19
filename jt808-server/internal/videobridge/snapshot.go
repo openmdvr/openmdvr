@@ -101,7 +101,13 @@ func (d *Dispatcher) handleSnapshot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	stream := proto.StreamName(req.DeviceKey, req.Channel)
-	data, snapErr := d.captureFrame(r.Context(), proto, req, stream)
+	// Resolve the media node this stream lives on (NodeFor reads the active
+	// entry's NodeID). In single-node mode this is always the one node; in a
+	// pool it is the exact node holding the stream, so getSnap / force-close /
+	// reader-count all hit the right ZLMediaKit.
+	nodeID, _ := proto.NodeFor(req.DeviceKey, req.Channel)
+	node := d.media.NodeOrDefault(nodeID)
+	data, snapErr := d.captureFrame(r.Context(), node, proto, req, stream)
 	// One retry when the first attempt falls back to the placeholder. Seen
 	// in the field: on a DUAL-camera device (RTMP,ON,INOUT# starts both with
 	// one command) both share the same cellular uplink, and one can lose the
@@ -111,7 +117,7 @@ func (d *Dispatcher) handleSnapshot(w http.ResponseWriter, r *http.Request) {
 	if errors.Is(snapErr, ErrSnapFallbackImage) {
 		select {
 		case <-time.After(snapshotKeyframeGrace):
-			data, snapErr = d.captureFrame(r.Context(), proto, req, stream)
+			data, snapErr = d.captureFrame(r.Context(), node, proto, req, stream)
 		case <-r.Context().Done():
 		}
 	}
@@ -135,12 +141,14 @@ func (d *Dispatcher) handleSnapshot(w http.ResponseWriter, r *http.Request) {
 	// be watching (the normal no-viewer stop still arrives within ~20s, so it
 	// is never unbounded).
 	closeCtx, cancelClose := context.WithTimeout(context.Background(), 5*time.Second)
-	if keep, why := d.snapshotShouldKeepStream(closeCtx, proto, req.DeviceKey, req.Channel, stream); keep {
+	if keep, why := d.snapshotShouldKeepStream(closeCtx, node, proto, req.DeviceKey, req.Channel, stream); keep {
 		log.Printf("videobridge: snapshot of %s/%d does not stop the stream: %s", req.DeviceKey, req.Channel, why)
 	} else {
 		proto.HandleIdleStream(req.DeviceKey, req.Channel)
-		if closeErr := d.zlm.CloseMediaStream(closeCtx, proto.App(), stream); closeErr != nil {
-			log.Printf("videobridge: snapshot could not force-close %s/%s: %v", proto.App(), stream, closeErr)
+		if node != nil {
+			if closeErr := node.Client.CloseMediaStream(closeCtx, proto.App(), stream); closeErr != nil {
+				log.Printf("videobridge: snapshot could not force-close %s/%s on node %s: %v", proto.App(), stream, node.ID, closeErr)
+			}
 		}
 	}
 	cancelClose()
@@ -169,14 +177,14 @@ func (d *Dispatcher) handleSnapshot(w http.ResponseWriter, r *http.Request) {
 // snapshotShouldKeepStream decides whether the immediate stop after a photo
 // must be skipped because there is (or is about to be) a live viewer -- see
 // the comment in handleSnapshot.
-func (d *Dispatcher) snapshotShouldKeepStream(ctx context.Context, proto Protocol, deviceKey string, channel uint8, stream string) (keep bool, why string) {
+func (d *Dispatcher) snapshotShouldKeepStream(ctx context.Context, node *MediaNode, proto Protocol, deviceKey string, channel uint8, stream string) (keep bool, why string) {
 	if proto.LiveViewClaimed(deviceKey, channel) {
 		return true, "there is a live video request for this channel"
 	}
-	if d.zlm == nil {
+	if node == nil {
 		return false, ""
 	}
-	n, err := d.zlm.ReaderCount(ctx, proto.App(), stream)
+	n, err := node.Client.ReaderCount(ctx, proto.App(), stream)
 	if err != nil {
 		return true, fmt.Sprintf("could not query viewers (%v), leaving it to the normal idle stop", err)
 	}
@@ -192,7 +200,10 @@ func (d *Dispatcher) snapshotShouldKeepStream(ctx context.Context, proto Protoco
 // ticket as soon as getSnap opens its internal subscription, keyframe or
 // not, so retrying with an already-consumed token would always fail as
 // "unauthorized" instead of getting a real second chance.
-func (d *Dispatcher) captureFrame(ctx context.Context, proto Protocol, req snapshotRequestBody, stream string) ([]byte, error) {
+func (d *Dispatcher) captureFrame(ctx context.Context, node *MediaNode, proto Protocol, req snapshotRequestBody, stream string) ([]byte, error) {
+	if node == nil {
+		return nil, fmt.Errorf("videobridge: no media node to capture snapshot of %s", req.DeviceKey)
+	}
 	token, err := d.tickets.Mint(req.TenantID, req.DeviceKey, proto.App(), req.Channel)
 	if err != nil {
 		log.Printf("videobridge: snapshot could not mint ticket for %s: %v", req.DeviceKey, err)
@@ -200,7 +211,7 @@ func (d *Dispatcher) captureFrame(ctx context.Context, proto Protocol, req snaps
 	}
 	snapCtx, cancel := context.WithTimeout(context.Background(), time.Duration(snapshotZLMTimeoutSec+5)*time.Second)
 	defer cancel()
-	return d.zlm.GetSnap(snapCtx, proto.App(), stream, token, snapshotZLMTimeoutSec)
+	return node.Client.GetSnap(snapCtx, proto.App(), stream, token, snapshotZLMTimeoutSec)
 }
 
 // handleSnapshotCache is the "cheap" half of the capture: it checks the

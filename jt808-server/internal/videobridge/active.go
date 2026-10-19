@@ -40,6 +40,11 @@ type ActiveEntry struct {
 	PlayURL    string
 	MaxSeconds int
 	Cancel     context.CancelFunc
+	// NodeID is the media node (ZLMediaKit mediaServerId) this stream lives
+	// on: chosen when a pull protocol placed it, or learned from on_publish's
+	// mediaServerId for a push protocol. Empty in single-node mode resolves to
+	// the default node. Used to act on the SAME node for close/snapshot.
+	NodeID string
 	// Auto=true means THIS entry was created without any user explicitly
 	// requesting it yet. Generic concept, not protocol-specific. Example: on
 	// a dual-camera JC261, "RTMP,ON,INOUT#" starts both cameras at once, so
@@ -64,19 +69,19 @@ func NewActiveStreams() *ActiveStreams {
 	return &ActiveStreams{streams: make(map[string]ActiveEntry)}
 }
 
-func (a *ActiveStreams) MarkActive(streamID, playURL string, maxSeconds int, cancel context.CancelFunc) {
+func (a *ActiveStreams) MarkActive(streamID, playURL string, maxSeconds int, cancel context.CancelFunc, nodeID string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.streams[streamID] = ActiveEntry{PlayURL: playURL, MaxSeconds: maxSeconds, Cancel: cancel}
+	a.streams[streamID] = ActiveEntry{PlayURL: playURL, MaxSeconds: maxSeconds, Cancel: cancel, NodeID: nodeID}
 }
 
 // MarkActiveAuto is like MarkActive, but for an entry nobody has explicitly
 // requested yet (see Auto above). It also stores state so a later real
 // request can claim it with ClaimAuto.
-func (a *ActiveStreams) MarkActiveAuto(streamID, playURL string, maxSeconds int, cancel context.CancelFunc, state any) {
+func (a *ActiveStreams) MarkActiveAuto(streamID, playURL string, maxSeconds int, cancel context.CancelFunc, state any, nodeID string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.streams[streamID] = ActiveEntry{PlayURL: playURL, MaxSeconds: maxSeconds, Cancel: cancel, Auto: true, State: state}
+	a.streams[streamID] = ActiveEntry{PlayURL: playURL, MaxSeconds: maxSeconds, Cancel: cancel, Auto: true, State: state, NodeID: nodeID}
 }
 
 // ClaimAuto replaces an Auto entry's cut-off timer with a new one (fresh

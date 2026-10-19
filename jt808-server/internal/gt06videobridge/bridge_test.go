@@ -191,7 +191,7 @@ func TestGT06PendingVideo_RecentStartSuppressesRedundantCommand(t *testing.T) {
 
 func TestLiveViewClaimed_OnlyForExplicitRequests(t *testing.T) {
 	b := newTestBridge("live")
-	b.active.MarkActiveAuto(gt06StreamKey("imei1", 0), "u", 60, func() {}, &gt06StreamInfo{App: "live", Stream: "0/imei1"})
+	b.active.MarkActiveAuto(gt06StreamKey("imei1", 0), "u", 60, func() {}, &gt06StreamInfo{App: "live", Stream: "0/imei1"}, "")
 	if b.LiveViewClaimed("imei1", 0) {
 		t.Fatal("an Auto entry (preview photo / device-initiated start) is not a live request")
 	}

@@ -3,6 +3,8 @@ package gt06videobridge
 import (
 	"context"
 	"testing"
+
+	"github.com/openmdvr/openmdvr/jt808-server/internal/videobridge"
 )
 
 // --- extractGT06Stream / canonical format (F4) ---
@@ -62,7 +64,7 @@ func TestParseStream_DelegatesToExtractGT06Stream(t *testing.T) {
 
 func TestAuthorizePublish_RejectsNoIMEIInStream(t *testing.T) {
 	b := newTestBridge("live")
-	err := b.AuthorizePublish(context.Background(), "live", "no-imei-here")
+	err := b.AuthorizePublish(context.Background(), "", "live", "no-imei-here")
 	if err == nil {
 		t.Error("stream without a recognizable IMEI authorized, want error")
 	}
@@ -73,9 +75,30 @@ func TestAuthorizePublish_RejectsAliasedIMEI(t *testing.T) {
 	// BEFORE touching the database -- no Postgres needed (pool is nil in
 	// newTestBridge) because the rejection happens in extractGT06Stream.
 	b := newTestBridge("live")
-	err := b.AuthorizePublish(context.Background(), "live", "garbage_490154203237518_evil")
+	err := b.AuthorizePublish(context.Background(), "", "live", "garbage_490154203237518_evil")
 	if err == nil {
 		t.Error("stream with a non-canonical IMEI authorized, want error")
+	}
+}
+
+func TestAuthorizePublish_RejectsUnknownMediaNodeMultiNode(t *testing.T) {
+	// Multi-node regression: a publish whose mediaServerId is not in the pool
+	// (that node's config.ini mediaServerId != its ZLM_NODES id) must be
+	// refused BEFORE touching Postgres -- tracking it would build the playback
+	// URL and the server-side force-close on the wrong (default) node. The node
+	// gate runs after extractGT06Stream and before the DB lookup, so the nil
+	// Postgres pool is never reached on this path.
+	b := newTestBridge("live")
+	pool, err := videobridge.NewMediaPool([]videobridge.NodeConfig{
+		{ID: "zlm-1", BaseURL: "http://z1:80", Secret: "s"},
+		{ID: "zlm-2", BaseURL: "http://z2:80", Secret: "s"},
+	})
+	if err != nil {
+		t.Fatalf("NewMediaPool: %v", err)
+	}
+	b.media = pool
+	if err := b.AuthorizePublish(context.Background(), "bogus-node", "live", "0/490154203237518"); err == nil {
+		t.Error("publish from an unknown media node authorized in a multi-node pool, want rejection")
 	}
 }
 
@@ -89,23 +112,23 @@ func TestHandleStreamNotFound_WaitsWhenAlreadyActive(t *testing.T) {
 	// the MediaSource). With an active entry for that imei+channel, waiting
 	// is now allowed instead of rejected.
 	b := newTestBridge("live")
-	b.active.MarkActive(gt06StreamKey("490154203237518", 0), "http://zlm/live/0.live.flv", 60, func() {})
+	b.active.MarkActive(gt06StreamKey("490154203237518", 0), "http://zlm/live/0.live.flv", 60, func() {}, "")
 
-	if !b.HandleStreamNotFound(context.Background(), "live", "0/490154203237518") {
+	if !b.HandleStreamNotFound(context.Background(), "", "live", "0/490154203237518") {
 		t.Error("allow = false with an active entry for this channel, want true (wait)")
 	}
 }
 
 func TestHandleStreamNotFound_RejectsWhenNotActive(t *testing.T) {
 	b := newTestBridge("live")
-	if b.HandleStreamNotFound(context.Background(), "live", "0/490154203237518") {
+	if b.HandleStreamNotFound(context.Background(), "", "live", "0/490154203237518") {
 		t.Error("allow = true without any active entry, want false")
 	}
 }
 
 func TestHandleStreamNotFound_RejectsUnrecognizedStream(t *testing.T) {
 	b := newTestBridge("live")
-	if b.HandleStreamNotFound(context.Background(), "live", "no-imei-here") {
+	if b.HandleStreamNotFound(context.Background(), "", "live", "no-imei-here") {
 		t.Error("unrecognizable stream authorized, want false")
 	}
 }
@@ -114,9 +137,9 @@ func TestHandleStreamNotFound_DoesNotMatchOtherChannel(t *testing.T) {
 	// An active entry for channel 0 must not authorize waiting on channel 1
 	// -- they are independent streams (the JC261's two cameras).
 	b := newTestBridge("live")
-	b.active.MarkActive(gt06StreamKey("490154203237518", 0), "http://zlm/live/0.live.flv", 60, func() {})
+	b.active.MarkActive(gt06StreamKey("490154203237518", 0), "http://zlm/live/0.live.flv", 60, func() {}, "")
 
-	if b.HandleStreamNotFound(context.Background(), "live", "1/490154203237518") {
+	if b.HandleStreamNotFound(context.Background(), "", "live", "1/490154203237518") {
 		t.Error("channel 0's active entry authorized waiting on channel 1")
 	}
 }
@@ -125,7 +148,7 @@ func TestHandleStreamNotFound_DoesNotMatchOtherChannel(t *testing.T) {
 
 func TestHandleIdleStream_ClosesActiveStream(t *testing.T) {
 	b := newTestBridge("live")
-	b.active.MarkActive(gt06StreamKey("490154203237518", 0), "http://zlm/live/0/xyz.live.flv", 60, func() {})
+	b.active.MarkActive(gt06StreamKey("490154203237518", 0), "http://zlm/live/0/xyz.live.flv", 60, func() {}, "")
 
 	if !b.HandleIdleStream("490154203237518", 0) {
 		t.Error("tracked = false for an active gt06 stream with no viewers, want true")
@@ -148,8 +171,8 @@ func TestHandleIdleStream_DoesNotAffectOtherActiveChannel(t *testing.T) {
 	// here, so no real send is attempted -- this test checks the OBSERVABLE
 	// effect: channel 0 with viewers is untouched).
 	b := newTestBridge("live")
-	b.active.MarkActive(gt06StreamKey("490154203237518", 0), "http://zlm/live/0.live.flv", 60, func() {})
-	b.active.MarkActive(gt06StreamKey("490154203237518", 1), "http://zlm/live/1.live.flv", 60, func() {})
+	b.active.MarkActive(gt06StreamKey("490154203237518", 0), "http://zlm/live/0.live.flv", 60, func() {}, "")
+	b.active.MarkActive(gt06StreamKey("490154203237518", 1), "http://zlm/live/1.live.flv", 60, func() {}, "")
 
 	if !b.HandleIdleStream("490154203237518", 1) {
 		t.Error("tracked = false for active channel 1, want true (it MUST be closed)")
@@ -164,7 +187,7 @@ func TestHandleIdleStream_DoesNotAffectOtherActiveChannel(t *testing.T) {
 func TestHandleStreamStopped_ReleasesActiveEntry(t *testing.T) {
 	b := newTestBridge("live")
 	cancelled := false
-	b.active.MarkActive(gt06StreamKey("490154203237518", 0), "url", 60, func() { cancelled = true })
+	b.active.MarkActive(gt06StreamKey("490154203237518", 0), "url", 60, func() { cancelled = true }, "")
 
 	b.HandleStreamStopped("live", "0/490154203237518")
 
@@ -178,8 +201,8 @@ func TestHandleStreamStopped_ReleasesActiveEntry(t *testing.T) {
 
 func TestHandleStreamStopped_DoesNotAffectOtherChannel(t *testing.T) {
 	b := newTestBridge("live")
-	b.active.MarkActive(gt06StreamKey("490154203237518", 0), "url", 60, func() {})
-	b.active.MarkActive(gt06StreamKey("490154203237518", 1), "url", 60, func() {})
+	b.active.MarkActive(gt06StreamKey("490154203237518", 0), "url", 60, func() {}, "")
+	b.active.MarkActive(gt06StreamKey("490154203237518", 1), "url", 60, func() {}, "")
 
 	b.HandleStreamStopped("live", "0/490154203237518")
 
@@ -190,7 +213,7 @@ func TestHandleStreamStopped_DoesNotAffectOtherChannel(t *testing.T) {
 
 func TestHandleStreamStopped_UnrecognizedStreamDoesNothing(t *testing.T) {
 	b := newTestBridge("live")
-	b.active.MarkActive(gt06StreamKey("490154203237518", 0), "url", 60, func() {})
+	b.active.MarkActive(gt06StreamKey("490154203237518", 0), "url", 60, func() {}, "")
 	b.HandleStreamStopped("live", "no-imei-here")
 	if _, active := b.active.Entry(gt06StreamKey("490154203237518", 0)); !active {
 		t.Error("an unrecognizable stream released a real active entry")

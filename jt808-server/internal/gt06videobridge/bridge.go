@@ -35,20 +35,13 @@ type Config struct {
 	// this protocol by. Leaving it empty disables this integration entirely
 	// (see the NewDispatcher guardrail in videobridge).
 	GT06VideoApp string
-	// ZLMGT06PlayBaseURL is the HTTP base (scheme and host, NO trailing
-	// slash) used to build a GT06 video stream's playback URL once
-	// on_publish confirms it: "<base>/<app>/<stream>.live.flv". It cannot be
-	// built ahead of time: the real "stream" is decided by the device
-	// firmware and only known when on_publish reports it.
-	// Legacy HTTP-FLV/mpegts.js path, kept until WebRTC fully replaces it.
-	ZLMGT06PlayBaseURL string
-	// ZLMWebrtcPlayBaseURL is the public HTTP base (scheme+host, no trailing
-	// slash) used to build the WHEP signaling URL -- same idea as
-	// ZLMGT06PlayBaseURL (the real app/stream are also unknown until
-	// on_publish confirms them), but WHEP uses query params (?app=&stream=)
-	// instead of a path.
-	ZLMWebrtcPlayBaseURL string
 }
+
+// The per-node FLV and WebRTC playback bases used to live here as scalars.
+// They are now per media node in videobridge.MediaNode: a gt06_video stream's
+// playback URL is built from the node on_publish confirmed it landed on (its
+// mediaServerId), resolved through the *videobridge.MediaPool this bridge
+// holds. Single-node mode is a pool of length one.
 
 // gt06VideoStartupTimeout: how long to wait, after sending the
 // "request_video" command (text RTMP,ON,INOUT -- see gt06server/commands.go),
@@ -111,6 +104,10 @@ var gt06KnownChannels = []uint8{0, 1}
 type gt06StreamInfo struct {
 	App    string
 	Stream string
+	// NodeID is the media node (mediaServerId) the push landed on, learned
+	// from on_publish. The playback URL and the force-close are built for THIS
+	// node. Empty resolves to the default node (single-node mode).
+	NodeID string
 }
 
 // gt06PendingVideo correlates an in-flight "request_video" command with the
@@ -293,7 +290,7 @@ type Bridge struct {
 	meter  *videobridge.LiveMeter
 	cfg    Config
 	active *videobridge.ActiveStreams
-	zlm    *videobridge.ZLMClient
+	media  *videobridge.MediaPool
 	pool   *pgxpool.Pool
 	sender commands.Sender
 	wait   *gt06PendingVideo
@@ -307,11 +304,11 @@ type Bridge struct {
 // engine_stop/engine_resume). Nil-safe: if not provided (tests, or a
 // deployment without GT06), RequestVideo fails with a clear error instead of
 // a nil pointer panic.
-func New(cfg Config, active *videobridge.ActiveStreams, zlm *videobridge.ZLMClient, pool *pgxpool.Pool, sender commands.Sender) *Bridge {
+func New(cfg Config, active *videobridge.ActiveStreams, media *videobridge.MediaPool, pool *pgxpool.Pool, sender commands.Sender) *Bridge {
 	return &Bridge{
 		cfg:    cfg,
 		active: active,
-		zlm:    zlm,
+		media:  media,
 		pool:   pool,
 		sender: sender,
 		wait:   newGT06PendingVideo(),
@@ -321,8 +318,8 @@ func New(cfg Config, active *videobridge.ActiveStreams, zlm *videobridge.ZLMClie
 // webrtcPlayURL builds the WHEP signaling URL from the REAL app/stream
 // on_publish already confirmed. Pure function, no embedded ticket (same as
 // jt1078bridge.webrtcPlayURL).
-func (b *Bridge) webrtcPlayURL(app, stream string) string {
-	return fmt.Sprintf("%s/index/api/whep?app=%s&stream=%s", b.cfg.ZLMWebrtcPlayBaseURL, app, stream)
+func (b *Bridge) webrtcPlayURL(node *videobridge.MediaNode, app, stream string) string {
+	return fmt.Sprintf("%s/index/api/whep?app=%s&stream=%s", node.WebRTCPlayBaseURL, app, stream)
 }
 
 // RequestVideo asks a gt06_video device (Jimi IoT JC261/JC400) to start the
@@ -398,7 +395,7 @@ func (b *Bridge) RequestVideoFor(ctx context.Context, imei string, channel uint8
 			}
 		}
 		if infoOK && info != nil {
-			webrtcURL = b.webrtcPlayURL(info.App, info.Stream)
+			webrtcURL = b.webrtcPlayURL(b.media.NodeOrDefault(info.NodeID), info.App, info.Stream)
 		}
 		return e.PlayURL, webrtcURL, e.MaxSeconds, quotaRemainingSeconds, nil
 	}
@@ -487,16 +484,17 @@ func (b *Bridge) RequestVideoFor(ctx context.Context, imei string, channel uint8
 // not overwritten or duplicated.
 func (b *Bridge) startVideoTracking(imei string, channel uint8, info gt06StreamInfo, maxSeconds, quotaRemainingSeconds int, autoTracked bool) (playURL string, webrtcURL string, gotMaxSeconds int, gotQuota int, err error) {
 	id := gt06StreamKey(imei, channel)
-	webrtcURL = b.webrtcPlayURL(info.App, info.Stream)
+	node := b.media.NodeOrDefault(info.NodeID)
+	webrtcURL = b.webrtcPlayURL(node, info.App, info.Stream)
 	if e, ok := b.active.Entry(id); ok {
 		return e.PlayURL, webrtcURL, e.MaxSeconds, quotaRemainingSeconds, nil
 	}
-	playURL = fmt.Sprintf("%s/%s/%s.live.flv", b.cfg.ZLMGT06PlayBaseURL, info.App, info.Stream)
+	playURL = fmt.Sprintf("%s/%s/%s.live.flv", node.GT06PlayBaseURL, info.App, info.Stream)
 	cutoffCtx, cancel := context.WithCancel(context.Background())
 	if autoTracked {
-		b.active.MarkActiveAuto(id, playURL, maxSeconds, cancel, &info)
+		b.active.MarkActiveAuto(id, playURL, maxSeconds, cancel, &info, node.ID)
 	} else {
-		b.active.MarkActive(id, playURL, maxSeconds, cancel)
+		b.active.MarkActive(id, playURL, maxSeconds, cancel, node.ID)
 	}
 	go b.enforceLiveViewLimit(cutoffCtx, imei, channel, info, maxSeconds, !autoTracked)
 	return playURL, webrtcURL, maxSeconds, quotaRemainingSeconds, nil
@@ -586,8 +584,9 @@ loop:
 	}
 	stopCancel()
 
-	if err := b.zlm.CloseMediaStream(context.Background(), info.App, info.Stream); err != nil {
-		log.Printf("gt06videobridge: closing stream %s channel %d in ZLMediaKit: %v", imei, channel, err)
+	node := b.media.NodeOrDefault(info.NodeID)
+	if err := node.Client.CloseMediaStream(context.Background(), info.App, info.Stream); err != nil {
+		log.Printf("gt06videobridge: closing stream %s channel %d in ZLMediaKit node %s: %v", imei, channel, node.ID, err)
 	}
 	b.markAllChannelsInactive(imei)
 }

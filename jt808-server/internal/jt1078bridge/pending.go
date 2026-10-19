@@ -28,6 +28,10 @@ type pendingEntry struct {
 	// when the 0x9101 is merely sent (the device may take a while to
 	// connect).
 	maxSeconds int
+	// nodeID is the media node whose openRtpServer this request opened. relay.go
+	// dials THAT node's RTP host and builds the playback URL from it, so the
+	// player connects to the same node the video is pushed into.
+	nodeID string
 }
 
 // pendingRequests remembers, between asking ZLMediaKit for a stream
@@ -48,6 +52,19 @@ func (p *pendingRequests) put(terminalID string, channel uint8, e pendingEntry) 
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.entries[pendingKey{terminalID, channel}] = e
+}
+
+// peek returns the pending entry WITHOUT removing it. Used by
+// requestVideoOnNode to make the pull path sticky: a concurrent second
+// request for the same (terminalID, channel) reuses the node of the request
+// already in flight, instead of round-robining onto a different node (which
+// would orphan the first receiver and strand the first viewer). Does not
+// consume -- only the device's real RTP connection consumes, via take.
+func (p *pendingRequests) peek(terminalID string, channel uint8) (pendingEntry, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	e, ok := p.entries[pendingKey{terminalID, channel}]
+	return e, ok
 }
 
 // take returns the pending entry and removes it -- each device JT1078
