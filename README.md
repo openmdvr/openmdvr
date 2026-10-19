@@ -97,6 +97,34 @@ An adaptive per-device model removes parked drift, multipath jumps and
 impossible speeds, so reports and geofences do not count kilometers a truck
 never drove. Every corrected point keeps the original reading.
 
+## Who it is for
+
+OpenMDVR is for a carrier or operator that wants to **own its fleet video
+and location data** and run the platform on infrastructure it controls. The
+whole system is a modular monolith: one Go binary, one API, one database,
+deployed with a single `docker compose up` and operable by one person. That
+simplicity is the point. It is what lets a fleet self-host without a
+platform team, and it is a deliberate choice, not a missing feature.
+
+A single server already scales a long way up — the load test stored every
+position from 50,000 simulated trackers on 2 vCPU (see [Scale](#scale)).
+Going beyond that is possible: `docs/scalability.md` describes how (more
+device servers on separate ports behind a TCP load balancer, batching the
+insert path). It simply needs more infrastructure and some distribution,
+and we do not ship a turnkey guide for it yet, because that is not the
+common case this project is built around. A fleet of hundreds of thousands
+of devices under one roof has different priorities — infrastructure cost is
+noise at that scale, and a self-installable box may no longer be the goal.
+OpenMDVR can be grown toward it; it just does not pretend, out of the box,
+to be an elastic SaaS for it.
+
+Nothing on this page is a projection. The scale numbers come from load tests
+on a single desktop — simulated devices, but a real server, a real database,
+and rows actually counted after each run, with the method and the bottleneck
+we hit documented so anyone can reproduce them. The pilot runs on real
+hardware. Where something is not yet certified or not yet proven against a
+device, this README says so.
+
 ## Screenshots
 
 | | |
@@ -151,6 +179,14 @@ architectural ceiling. On the browser side, maps render with WebGL vector
 tiles and clustered markers, and position updates reach every open dashboard
 through a single `LISTEN/NOTIFY` fan-out per API process instead of one
 database connection per viewer.
+
+Video is a separate budget from telemetry. The media server (playback fan-out,
+audio transcoding, RTMP ingest) runs as a **pool of one or more ZLMediaKit
+nodes**: the device server stays a single control brain — it places or learns
+each stream's node, reads the `mediaServerId` every media hook carries, and
+builds each stream's playback URL for the node it lives on. A single node is
+the default; to spread video load you add nodes in `ZLM_NODES` and run more
+ZLMediaKit instances.
 
 Hardware, method, the bottleneck we found and fixed along the way, and how to
 reproduce the numbers are in [docs/scalability.md](docs/scalability.md).

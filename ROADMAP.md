@@ -3,6 +3,22 @@
 OpenMDVR is early-stage software. It already runs with real hardware, but it
 is **not** production-certified. Priorities, roughly in order:
 
+## Scope
+
+OpenMDVR is built for carriers and operators that want to self-host their
+fleet video and location data as a modular monolith — one binary, one API,
+one database, run by one person. The load test already stores every position
+from 50,000 simulated trackers on a 2 vCPU / 4 GB server
+([docs/scalability.md](docs/scalability.md)).
+
+Running thousands or more devices **is possible** — it needs more
+infrastructure and some distribution (multiple device servers behind a TCP
+load balancer, batching the insert path). We do not yet publish a turnkey
+guide for that, because it is not the common case; the horizontal-scaling
+guide below tracks it. OpenMDVR can grow in that direction, it just is not,
+out of the box, an elastic SaaS for hundreds of thousands of devices under
+one roof.
+
 ## Security & compliance
 - [ ] Login rate limiting and lockout policy
 - [ ] Optional OIDC / SAML single sign-on and MFA
