@@ -148,10 +148,13 @@ func handleLocation(ctx context.Context, pool *pgxpool.Pool, sess *session.Sessi
 		return generalRespond(jtMsg, 2), nil // 2 = message error
 	}
 
-	pos, err := toGPSPosition(loc)
+	pos, tsReason, err := toGPSPosition(loc)
 	if err != nil {
 		log.Printf("jt808: 0x0200 with invalid data from terminal=%s: %v", sess.TerminalID, err)
 		return generalRespond(jtMsg, 2), nil
+	}
+	if tsReason != "" {
+		log.Printf("jt808: %s terminal=%s", tsReason, sess.TerminalID)
 	}
 	alarms := alarmsFromSignDetails(loc.AlarmSignDetails)
 	ignitionOn, powerConnected := deviceStatusFromLocation(loc)

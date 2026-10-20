@@ -80,10 +80,11 @@ untrusted field devices. Every listener follows the same checklist:
 - maximum concurrent connections and idle timeouts;
 - never leave a client without an answer on internal errors (prevents retry storms);
 - devices must be provisioned; unknown identifiers are dropped;
-- device-reported timestamps are sanity-bounded on GT06 (a fake year 2255
-  once created dozens of hypertable chunks and a "future last position" — now
-  replaced by server receive time); the same bound for JT808 is on the roadmap
-  (see architecture.md §19); positions without a GPS fix are not stored;
+- device-reported timestamps are sanity-bounded on both GT06 and JT808 (a
+  fake year 2255 once created dozens of hypertable chunks and a "future last
+  position"; a timestamp outside `[2020, now + 24h]` is replaced by the server
+  receive time, keeping the real coordinates); positions without a GPS fix are
+  not stored;
 - a GPS quality filter suppresses parked drift without discarding real data
   (originals are kept in `gps_positions.raw`).
 

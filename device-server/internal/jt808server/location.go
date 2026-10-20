@@ -40,10 +40,25 @@ func safeParseLocation(loc *model.T0x0200, jtMsg *jt808.JTMessage) (err error) {
 // library's bit parsing before trusting the field name -- a sign error here
 // would put every vehicle in the wrong hemisphere (critical for fleets in the
 // Americas, which are at western longitudes).
-func toGPSPosition(loc *model.T0x0200) (db.GPSPosition, error) {
+//
+// The returned string is a non-empty informational reason (not an error) when
+// the position was stored with a correction -- today only the server-time
+// substitution for an out-of-range device clock (see below). Callers log it
+// as a warning.
+func toGPSPosition(loc *model.T0x0200) (db.GPSPosition, string, error) {
+	var reason string
+	now := time.Now().UTC()
 	t, err := time.ParseInLocation("2006-01-02 15:04:05", loc.DateTime, cstOffset)
 	if err != nil {
-		return db.GPSPosition{}, fmt.Errorf("invalid location date %q: %w", loc.DateTime, err)
+		// Unparseable date (all-zero BCD, month 13, ...). Rather than drop the
+		// whole frame -- losing a real lat/lon from a device with a broken
+		// clock -- treat it exactly like an out-of-window timestamp below and
+		// use the server's reception time. This is what GT06 does (its
+		// time.Date normalizes instead of erroring), which issue #39 asks this
+		// path to match. The lat/lon range check below is still the real
+		// rejection path for genuinely garbage frames.
+		reason = fmt.Sprintf("unparseable device timestamp, using server time: raw=%q err=%v", loc.DateTime, err)
+		t = now
 	}
 
 	lat := float64(loc.Latitude) / 1e6
@@ -63,7 +78,29 @@ func toGPSPosition(loc *model.T0x0200) (db.GPSPosition, error) {
 	// (security review finding). Now it gets "message error" (2), which is
 	// correct: the data is bad, there is nothing to retry.
 	if lat < -90 || lat > 90 || lon < -180 || lon > 180 {
-		return db.GPSPosition{}, fmt.Errorf("lat/lon out of range: lat=%v lon=%v", lat, lon)
+		return db.GPSPosition{}, "", fmt.Errorf("lat/lon out of range: lat=%v lon=%v", lat, lon)
+	}
+
+	// Bound the device-reported timestamp, same window and rationale as GT06
+	// (maxFutureDrift/minValidTime, see internal/gt06server/handlers.go). The
+	// JT/T 808 location time is a BCD field the device fills from its own
+	// clock -- untrusted input, like every byte from a field device. A forged
+	// clock (e.g. year 2255) or an unsynchronized RTC (stuck years in the
+	// past) would otherwise become a permanent fake "last position" (queries
+	// order by time DESC) and explode TimescaleDB chunks in gps_positions, a
+	// hypertable SHARED by all tenants that enforce_gps_position_retention()
+	// deletes `time < now() - interval` from -- so a future timestamp is never
+	// pruned. Substitute the server's reception time instead of dropping the
+	// block, so a real lat/lon from a device with a bad clock is still kept,
+	// and the stored timestamp is then never under device control. Non-fatal:
+	// returned as an informational reason, not an error -- the geofence engine
+	// already protects itself, this closes the storage side. (An unparseable
+	// date was already substituted above; this covers a parseable but
+	// out-of-window one, the common real case -- e.g. an RTC stuck in 2007.)
+	if t.After(now.Add(maxFutureDrift)) || t.Before(minValidTime) {
+		reason = fmt.Sprintf("untrusted device timestamp, using server time: t=%s now=%s raw=%q",
+			t.Format(time.RFC3339), now.Format(time.RFC3339), loc.DateTime)
+		t = now
 	}
 
 	speedKmh := float32(loc.Speed) / 10
@@ -77,8 +114,18 @@ func toGPSPosition(loc *model.T0x0200) (db.GPSPosition, error) {
 		SpeedKmh: &speedKmh,
 		Heading:  &heading,
 		Altitude: &altitude,
-	}, nil
+	}, reason, nil
 }
+
+// maxFutureDrift/minValidTime bound the timestamp a JT/T 808 device may
+// declare, the same window GT06 uses (internal/gt06server/handlers.go). 24h
+// of future tolerance covers a badly synchronized device clock without
+// allowing arbitrary years; minValidTime is a fixed lower bound that closes
+// the same "chunk explosion" towards the past. Defined here, not shared with
+// gt06server, to keep the two protocol packages independent (see CLAUDE.md).
+const maxFutureDrift = 24 * time.Hour
+
+var minValidTime = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 
 // deviceStatusFromLocation extracts ignition (ACC) and external power from
 // the STATUS field of a 0x0200 -- ALREADY decoded by go-jt808 as a standard

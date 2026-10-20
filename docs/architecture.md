@@ -843,8 +843,6 @@ The dashboard is a React single-page app with code splitting per page.
 - Device connection state is in memory: a restart of the device server drops
   connections until devices reconnect (some reconnect only every few
   minutes).
-- The JT808 server does not yet bound device-reported timestamps the way GT06
-  does (the geofence engine protects itself, but the position is stored).
 - Vendor ADAS/DSM payloads, JT808 remote parameters, photo, media upload and
   recorded playback, CAN bus data and two-way audio are not implemented
   (see [protocols.md](protocols.md)).
