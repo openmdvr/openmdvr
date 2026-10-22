@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import {
   api,
   ApiError,
@@ -101,14 +102,15 @@ export default function Dashboard() {
   // tenant. That is why users/vehicles/drivers/devices of ALL tenants are not
   // mixed here: Administration is just the Tenants table, and managing one
   // tenant's fleet means entering its workspace.
+  const { t } = useTranslation();
   const navigate = useNavigate();
 
   return (
     <PageContainer>
-      <PageHeader title="Administración" description="Tenants de la plataforma — entra a uno para administrar todo lo suyo." />
+      <PageHeader title={t("admin.title")} description={t("admin.description")} />
 
       <section className="space-y-3">
-        <h2 className="text-xs font-semibold tracking-wide text-ink-faint uppercase">Plataforma</h2>
+        <h2 className="text-xs font-semibold tracking-wide text-ink-faint uppercase">{t("admin.platform_section")}</h2>
         {/*
          * Billing catalog, subscriptions, invoices/payments/promotions and
          * estimated profitability live on their own page (/billing,
@@ -131,6 +133,7 @@ export default function Dashboard() {
 // only (see require_super_admin in platform.py) -- forcing the map for the whole
 // platform is an infrastructure decision, not a routine task.
 function MapProviderSection() {
+  const { t } = useTranslation();
   const { role } = useAuth();
   const canEdit = role === "super_admin";
   const [settings, setSettings] = useState<Awaited<ReturnType<typeof api.getMapSettings>> | null>(null);
@@ -172,25 +175,19 @@ function MapProviderSection() {
 
   return (
     <Card>
-      <CardTitle>Mapa</CardTitle>
-      <p className="mb-3 text-xs text-ink-dim">
-        Proveedor de tiles del mapa. "Automático" es el estado esperado — cada navegador conmuta solo a otro
-        proveedor si detecta errores reales cargando tiles. Forzar uno específico aquí es una anulación manual
-        para toda la plataforma, pensada solo para cuando un proveedor falla de una forma que la detección
-        automática no cubre; en operación normal nunca debería hacer falta.
-      </p>
+      <CardTitle>{t("admin.map_title")}</CardTitle>
+      <p className="mb-3 text-xs text-ink-dim">{t("admin.map_description")}</p>
       {error && <Alert>{error}</Alert>}
       {settings == null ? (
-        <p className="text-xs text-ink-faint">Cargando…</p>
+        <p className="text-xs text-ink-faint">{t("common.loading")}</p>
       ) : (
         <>
           <p className="mb-3 text-xs text-ink-dim">
-            Estado actual:{" "}
             {settings.active_provider === "auto" ? (
-              <span className="text-ink">automático</span>
+              <span className="text-ink">{t("admin.map_auto")}</span>
             ) : (
               <span className="text-ink">
-                forzado a {MAP_PROVIDERS[settings.active_provider].label}
+                {t("admin.map_option_force", { provider: MAP_PROVIDERS[settings.active_provider].label })}
                 {settings.forced_by_email && ` · por ${settings.forced_by_email}`}
                 {settings.forced_at && ` · ${new Date(settings.forced_at).toLocaleString()}`}
               </span>
@@ -198,7 +195,7 @@ function MapProviderSection() {
           </p>
           {canEdit ? (
             <form onSubmit={onSubmit} className="flex flex-wrap items-end gap-2">
-              <Field label="Proveedor">
+              <Field label={t("admin.map_title")}>
                 <Select
                   value={selected}
                   onChange={(e) => {
@@ -206,21 +203,21 @@ function MapProviderSection() {
                     setSelected(e.target.value as MapProvider);
                   }}
                 >
-                  <option value="auto">Automático (recomendado)</option>
+                  <option value="auto">{t("admin.map_option_auto")}</option>
                   {forceOptions.map((id) => (
                     <option key={id} value={id}>
-                      Forzar: {MAP_PROVIDERS[id].label}
+                      {t("admin.map_option_force", { provider: MAP_PROVIDERS[id].label })}
                     </option>
                   ))}
                 </Select>
               </Field>
               <Button type="submit" disabled={busy}>
-                Guardar
+                {t("admin.save")}
               </Button>
-              {saved && <span className="text-xs text-emerald-500">Guardado.</span>}
+              {saved && <span className="text-xs text-emerald-500">{t("admin.user_saved")}</span>}
             </form>
           ) : (
-            <p className="text-xs text-ink-faint">Solo super_admin puede cambiar esta anulación.</p>
+            <p className="text-xs text-ink-faint">{t("admin.map_no_permission")}</p>
           )}
         </>
       )}
@@ -236,6 +233,7 @@ function MapProviderSection() {
 // useDeviceOfflineThreshold), which is why this editor lives only here and needs
 // no "who can see" check beyond "who can open this page".
 function MonitoringSettingsSection() {
+  const { t } = useTranslation();
   const [thresholdMinutes, setThresholdMinutes] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -267,17 +265,14 @@ function MonitoringSettingsSection() {
 
   return (
     <Card>
-      <CardTitle>Monitoreo</CardTitle>
-      <p className="mb-3 text-xs text-ink-dim">
-        Minutos sin reportar (posición o heartbeat) antes de que un dispositivo deje de verse como "visto ahora" en el
-        mapa y los listados. Aplica a toda la plataforma, cámaras y GPS por igual.
-      </p>
+      <CardTitle>{t("admin.monitoring_title")}</CardTitle>
+      <p className="mb-3 text-xs text-ink-dim">{t("admin.monitoring_description")}</p>
       {error && <Alert>{error}</Alert>}
       {thresholdMinutes == null ? (
-        <p className="text-xs text-ink-faint">Cargando…</p>
+        <p className="text-xs text-ink-faint">{t("common.loading")}</p>
       ) : (
         <form onSubmit={onSubmit} className="flex flex-wrap items-end gap-2">
-          <Field label="Umbral (minutos)">
+          <Field label={t("admin.monitoring_field")}>
             <Input
               type="number"
               min={1}
@@ -291,9 +286,9 @@ function MonitoringSettingsSection() {
             />
           </Field>
           <Button type="submit" disabled={busy}>
-            Guardar
+            {t("admin.save")}
           </Button>
-          {saved && <span className="text-xs text-emerald-500">Guardado.</span>}
+          {saved && <span className="text-xs text-emerald-500">{t("admin.user_saved")}</span>}
         </form>
       )}
     </Card>
@@ -305,6 +300,7 @@ function MonitoringSettingsSection() {
 // ---------------------------------------------------------------------------
 
 function TenantsSection({ onTenantCreated }: { onTenantCreated: (t: Tenant) => void }) {
+  const { t } = useTranslation();
   const { searchInput, setSearchInput, setOffset, page, error, reload } = usePaginatedResource<Tenant>((p) =>
     api.listTenants(p),
   );
@@ -315,7 +311,7 @@ function TenantsSection({ onTenantCreated }: { onTenantCreated: (t: Tenant) => v
       <CardTitle
         action={
           <Button variant="secondary" className="px-2 py-1 text-xs" onClick={() => setShowCreate((v) => !v)}>
-            {showCreate ? "Cancelar" : "+ Nuevo tenant"}
+            {showCreate ? t("admin.cancel") : t("admin.tenant_new")}
           </Button>
         }
       >
@@ -323,7 +319,7 @@ function TenantsSection({ onTenantCreated }: { onTenantCreated: (t: Tenant) => v
       </CardTitle>
 
       <Input
-        placeholder="Buscar por nombre..."
+        placeholder={t("admin.tenant_search")}
         value={searchInput}
         onChange={(e) => setSearchInput(e.target.value)}
         className="mb-3"
@@ -344,19 +340,19 @@ function TenantsSection({ onTenantCreated }: { onTenantCreated: (t: Tenant) => v
       {error && <Alert>{error}</Alert>}
 
       {!page || page.items.length === 0 ? (
-        <EmptyState>Sin resultados.</EmptyState>
+        <EmptyState>{t("admin.tenant_empty")}</EmptyState>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-line text-xs tracking-wide text-ink-faint uppercase">
-                <th className="py-1.5 pr-2 font-medium">Nombre</th>
-                <th className="py-1.5 pr-2 font-medium">Estado</th>
-                <th className="py-1.5 pr-2 font-medium">Límite/sesión (s)</th>
-                <th className="py-1.5 pr-2 font-medium">Cuota/mes (min)</th>
-                <th className="py-1.5 pr-2 font-medium">Retención GPS (días)</th>
-                <th className="py-1.5 pr-2 font-medium">Ciclo de facturación</th>
-                <th className="py-1.5 font-medium">Webhooks</th>
+                <th className="py-1.5 pr-2 font-medium">{t("admin.tenant_col_name")}</th>
+                <th className="py-1.5 pr-2 font-medium">{t("admin.tenant_col_status")}</th>
+                <th className="py-1.5 pr-2 font-medium">{t("admin.tenant_col_session")}</th>
+                <th className="py-1.5 pr-2 font-medium">{t("admin.tenant_col_quota")}</th>
+                <th className="py-1.5 pr-2 font-medium">{t("admin.tenant_col_retention")}</th>
+                <th className="py-1.5 pr-2 font-medium">{t("admin.tenant_col_billing")}</th>
+                <th className="py-1.5 font-medium">{t("admin.tenant_col_webhooks")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
@@ -378,6 +374,7 @@ function TenantsSection({ onTenantCreated }: { onTenantCreated: (t: Tenant) => v
 }
 
 function TenantCreateForm({ onCreated }: { onCreated: (t: Tenant) => void }) {
+  const { t } = useTranslation();
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -400,12 +397,12 @@ function TenantCreateForm({ onCreated }: { onCreated: (t: Tenant) => void }) {
   return (
     <form onSubmit={onSubmit} className="flex flex-wrap items-end gap-2 border border-line bg-surface-2 p-3">
       <div className="min-w-[200px] flex-1">
-        <Field label="Nombre del nuevo tenant">
+        <Field label={t("admin.tenant_field_name")}>
           <Input required autoFocus value={name} onChange={(e) => setName(e.target.value)} />
         </Field>
       </div>
       <Button type="submit" disabled={busy}>
-        Crear tenant
+        {t("admin.tenant_create")}
       </Button>
       {error && <Alert>{error}</Alert>}
     </form>
@@ -413,6 +410,7 @@ function TenantCreateForm({ onCreated }: { onCreated: (t: Tenant) => void }) {
 }
 
 function TenantRow({ tenant, onChanged }: { tenant: Tenant; onChanged: () => void }) {
+  const { t } = useTranslation();
   const [limit, setLimit] = useState(String(tenant.max_live_view_seconds));
   const [busyLimit, setBusyLimit] = useState(false);
   const [limitError, setLimitError] = useState<string | null>(null);
@@ -514,7 +512,7 @@ function TenantRow({ tenant, onChanged }: { tenant: Tenant; onChanged: () => voi
           />
           {dirtyLimit && (
             <Button variant="secondary" disabled={busyLimit} onClick={saveLimit} className="px-2 py-1 text-xs">
-              Guardar
+              {t("admin.save")}
             </Button>
           )}
         </div>
@@ -531,7 +529,7 @@ function TenantRow({ tenant, onChanged }: { tenant: Tenant; onChanged: () => voi
           />
           {dirtyQuota && (
             <Button variant="secondary" disabled={busyQuota} onClick={saveQuota} className="px-2 py-1 text-xs">
-              Guardar
+              {t("admin.save")}
             </Button>
           )}
         </div>
@@ -549,7 +547,7 @@ function TenantRow({ tenant, onChanged }: { tenant: Tenant; onChanged: () => voi
           />
           {dirtyRetention && (
             <Button variant="secondary" disabled={busyRetention} onClick={saveRetention} className="px-2 py-1 text-xs">
-              Guardar
+              {t("admin.save")}
             </Button>
           )}
         </div>
@@ -571,6 +569,7 @@ function TenantRow({ tenant, onChanged }: { tenant: Tenant; onChanged: () => voi
 // that is not super_admin sees the state but NEVER a control the backend would
 // reject anyway (same rule as canManage in TenantWorkspace.tsx).
 function WebhooksEnabledToggle({ tenant, onChanged }: { tenant: Tenant; onChanged: () => void }) {
+  const { t } = useTranslation();
   const { role } = useAuth();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -589,14 +588,14 @@ function WebhooksEnabledToggle({ tenant, onChanged }: { tenant: Tenant; onChange
   }
 
   if (role !== "super_admin") {
-    return <Badge tone={tenant.webhooks_enabled ? "success" : "muted"}>{tenant.webhooks_enabled ? "sí" : "no"}</Badge>;
+    return <Badge tone={tenant.webhooks_enabled ? "success" : "muted"}>{tenant.webhooks_enabled ? t("admin.webhooks_yes") : t("admin.webhooks_no")}</Badge>;
   }
 
   return (
     <div>
       <label className="flex items-center gap-1.5 text-xs text-ink">
         <input type="checkbox" checked={tenant.webhooks_enabled} disabled={busy} onChange={toggle} />
-        {tenant.webhooks_enabled ? "Habilitado" : "Deshabilitado"}
+        {tenant.webhooks_enabled ? t("admin.webhooks_enabled") : t("admin.webhooks_disabled")}
       </label>
       {error && <p className="mt-1 text-xs text-red-300">{error}</p>}
     </div>
@@ -605,13 +604,13 @@ function WebhooksEnabledToggle({ tenant, onChanged }: { tenant: Tenant; onChange
 
 // Billing cycle -- editable through PATCH /tenants/{id} (see api/README.md),
 // since plans are sold monthly, semiannually or annually.
-const BILLING_PERIOD_LABEL: Record<BillingPeriod, string> = {
-  monthly: "Mensual",
-  semiannual: "Semestral",
-  annual: "Anual",
-};
-
 function BillingPeriodSelect({ tenant, onChanged }: { tenant: Tenant; onChanged: () => void }) {
+  const { t } = useTranslation();
+  const BILLING_PERIOD_LABEL: Record<BillingPeriod, string> = {
+    monthly: t("admin.billing_monthly"),
+    semiannual: t("admin.billing_semiannual"),
+    annual: t("admin.billing_annual"),
+  };
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -684,6 +683,7 @@ export function UsersSection({
   // session viewing a specific tenant's workspace (TenantWorkspace.tsx) only
   // sees THAT tenant's users, not the global bypass. Redundant for a real
   // tenant_admin (RLS already limits it) but harmless.
+  const { t } = useTranslation();
   const { searchInput, setSearchInput, setOffset, page, error, reload } = usePaginatedResource<User>((p) =>
     api.listUsers({ ...p, tenant_id: ownTenantId ?? undefined }),
   );
@@ -749,16 +749,16 @@ export function UsersSection({
         action={
           canManage && (
             <Button variant="secondary" className="px-2 py-1 text-xs" onClick={() => setShowCreate((v) => !v)}>
-              {showCreate ? "Cancelar" : "+ Nuevo usuario"}
+              {showCreate ? t("admin.cancel") : t("admin.user_new")}
             </Button>
           )
         }
       >
-        Usuarios
+        {t("admin.users_title")}
       </CardTitle>
 
       <Input
-        placeholder="Buscar por email..."
+        placeholder={t("admin.user_search")}
         value={searchInput}
         onChange={(e) => setSearchInput(e.target.value)}
         className="mb-3"
@@ -783,16 +783,16 @@ export function UsersSection({
       {statusError && <Alert>{statusError}</Alert>}
 
       {!page || page.items.length === 0 ? (
-        <EmptyState>Sin resultados.</EmptyState>
+        <EmptyState>{t("admin.user_empty")}</EmptyState>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-line text-xs tracking-wide text-ink-faint uppercase">
-                <th className="py-1.5 pr-2 font-medium">Email</th>
-                {isPlatform && <th className="py-1.5 pr-2 font-medium">Tenant</th>}
-                <th className="py-1.5 font-medium">Rol</th>
-                <th className="py-1.5 pl-2 font-medium">Estado</th>
+                <th className="py-1.5 pr-2 font-medium">{t("admin.user_col_email")}</th>
+                {isPlatform && <th className="py-1.5 pr-2 font-medium">{t("admin.user_col_tenant")}</th>}
+                <th className="py-1.5 font-medium">{t("admin.user_col_role")}</th>
+                <th className="py-1.5 pl-2 font-medium">{t("admin.user_col_status")}</th>
                 {ownTenantId && <th className="py-1.5 pl-2 font-medium" />}
               </tr>
             </thead>
@@ -809,7 +809,7 @@ export function UsersSection({
                     </td>
                     <td className="py-2 pl-2">
                       <Badge tone={u.status === "active" ? "success" : "muted"}>
-                        {u.status === "active" ? "Activo" : "Desactivado"}
+                        {u.status === "active" ? t("admin.user_status_active") : t("admin.user_status_disabled")}
                       </Badge>
                     </td>
                     {ownTenantId && (
@@ -822,7 +822,7 @@ export function UsersSection({
                               disabled={statusBusyId === u.id}
                               onClick={() => toggleUserStatus(u)}
                             >
-                              {u.status === "active" ? "Desactivar" : "Reactivar"}
+                              {u.status === "active" ? t("admin.user_deactivate") : t("admin.user_reactivate")}
                             </Button>
                           )}
                           {canResetPassword(u) && (
@@ -835,10 +835,10 @@ export function UsersSection({
                               }}
                             >
                               {resetDoneId === u.id
-                                ? "Contraseña actualizada"
+                                ? t("admin.user_pwd_updated")
                                 : resetPasswordUserId === u.id
-                                  ? "Cancelar"
-                                  : "Restablecer contraseña"}
+                                  ? t("admin.cancel")
+                                  : t("admin.user_reset_pwd")}
                             </Button>
                           )}
                           {_ASSIGNABLE_ROLES.has(u.role) && (
@@ -847,7 +847,7 @@ export function UsersSection({
                               className="px-2 py-1 text-xs"
                               onClick={() => setExpandedUserId((id) => (id === u.id ? null : u.id))}
                             >
-                              {expandedUserId === u.id ? "Cerrar" : "Asignación"}
+                              {expandedUserId === u.id ? t("admin.user_close") : t("admin.user_assignment")}
                             </Button>
                           )}
                         </div>
@@ -861,7 +861,7 @@ export function UsersSection({
                           <Input
                             type="password"
                             autoFocus
-                            placeholder="Nueva contraseña (mínimo 8 caracteres)"
+                            placeholder={t("admin.user_pwd_placeholder")}
                             value={resetPasswordValue}
                             onChange={(e) => setResetPasswordValue(e.target.value)}
                             className="max-w-xs"
@@ -871,7 +871,7 @@ export function UsersSection({
                             disabled={resetBusyId === u.id || resetPasswordValue.length < 8}
                             onClick={() => submitResetPassword(u.id)}
                           >
-                            Confirmar
+                            {t("admin.user_confirm_pwd")}
                           </Button>
                         </div>
                         <p className="mt-1 text-xs text-ink-faint">
@@ -909,6 +909,7 @@ export function UsersSection({
 // TenantSettingsUpdate/DeviceGroupMembersUpdate), not incremental add/remove --
 // the admin sees the complete current state and corrects it.
 function UserAssignmentPanel({ userId, tenantId, canManage }: { userId: string; tenantId: string; canManage: boolean }) {
+  const { t } = useTranslation();
   const [devices, setDevices] = useState<Device[]>([]);
   const [groups, setGroups] = useState<DeviceGroup[]>([]);
   const [assignment, setAssignment] = useState<UserDeviceAssignments | null>(null);
@@ -977,14 +978,14 @@ function UserAssignmentPanel({ userId, tenantId, canManage }: { userId: string; 
   }
 
   if (error) return <Alert>{error}</Alert>;
-  if (!assignment || !settings) return <div className="text-xs text-ink-faint">Cargando…</div>;
+  if (!assignment || !settings) return <div className="text-xs text-ink-faint">{t("common.loading")}</div>;
 
   return (
     <div className="space-y-3">
       <div>
-        <div className="mb-1 text-xs font-semibold tracking-wide text-ink-faint uppercase">Dispositivos</div>
+        <div className="mb-1 text-xs font-semibold tracking-wide text-ink-faint uppercase">{t("admin.devices_section")}</div>
         {devices.length === 0 ? (
-          <div className="text-xs text-ink-faint">Este tenant no tiene dispositivos.</div>
+          <div className="text-xs text-ink-faint">{t("admin.user_no_devices")}</div>
         ) : (
           <div className="flex flex-wrap gap-x-4 gap-y-1">
             {devices.map((d) => (
@@ -1003,9 +1004,9 @@ function UserAssignmentPanel({ userId, tenantId, canManage }: { userId: string; 
       </div>
 
       <div>
-        <div className="mb-1 text-xs font-semibold tracking-wide text-ink-faint uppercase">Grupos</div>
+        <div className="mb-1 text-xs font-semibold tracking-wide text-ink-faint uppercase">{t("admin.groups_section")}</div>
         {groups.length === 0 ? (
-          <div className="text-xs text-ink-faint">Este tenant no tiene grupos de dispositivos todavía.</div>
+          <div className="text-xs text-ink-faint">{t("admin.user_no_groups")}</div>
         ) : (
           <div className="flex flex-wrap gap-x-4 gap-y-1">
             {groups.map((g) => (
@@ -1025,13 +1026,13 @@ function UserAssignmentPanel({ userId, tenantId, canManage }: { userId: string; 
 
       {canManage && (
         <Button variant="secondary" className="px-2 py-1 text-xs" onClick={onSaveAssignment} disabled={busy}>
-          Guardar asignación
+          {t("admin.user_save_assignment")}
         </Button>
       )}
-      {saved && <span className="ml-2 text-xs text-ink-faint">Guardado.</span>}
+      {saved && <span className="ml-2 text-xs text-ink-faint">{t("admin.user_saved")}</span>}
 
       <div className="border-t border-line pt-3">
-        <div className="mb-1 text-xs font-semibold tracking-wide text-ink-faint uppercase">Notificaciones</div>
+        <div className="mb-1 text-xs font-semibold tracking-wide text-ink-faint uppercase">{t("admin.notifications_section")}</div>
         <div className="flex flex-wrap gap-x-4 gap-y-1">
           <label className="flex items-center gap-1.5 text-sm text-ink">
             <input
@@ -1040,7 +1041,7 @@ function UserAssignmentPanel({ userId, tenantId, canManage }: { userId: string; 
               checked={settings.in_app_enabled}
               onChange={(e) => onToggleChannel("in_app_enabled", e.target.checked)}
             />
-            Plataforma
+            {t("admin.notif_inapp")}
           </label>
           <label className="flex items-center gap-1.5 text-sm text-ink">
             <input
@@ -1049,7 +1050,7 @@ function UserAssignmentPanel({ userId, tenantId, canManage }: { userId: string; 
               checked={settings.email_enabled}
               onChange={(e) => onToggleChannel("email_enabled", e.target.checked)}
             />
-            Correo
+            {t("admin.notif_email")}
           </label>
         </div>
       </div>
@@ -1065,6 +1066,7 @@ function UserAssignmentPanel({ userId, tenantId, canManage }: { userId: string; 
 // as the rest of this panel: only tenant_admin/platform manages them
 // (canManage), never self-service.
 function ApiKeysSubsection({ userId, devices, canManage }: { userId: string; devices: Device[]; canManage: boolean }) {
+  const { t } = useTranslation();
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -1100,10 +1102,10 @@ function ApiKeysSubsection({ userId, devices, canManage }: { userId: string; dev
   return (
     <div className="border-t border-line pt-3">
       <div className="mb-1 flex items-center justify-between">
-        <div className="text-xs font-semibold tracking-wide text-ink-faint uppercase">Claves de API</div>
+        <div className="text-xs font-semibold tracking-wide text-ink-faint uppercase">{t("admin.apikey_title")}</div>
         {canManage && !showCreate && !justCreated && (
           <Button variant="secondary" className="px-2 py-1 text-xs" onClick={() => setShowCreate(true)}>
-            + Nueva clave
+            {t("admin.apikey_new")}
           </Button>
         )}
       </div>
@@ -1111,12 +1113,12 @@ function ApiKeysSubsection({ userId, devices, canManage }: { userId: string; dev
 
       {justCreated && (
         <div className="mb-2 space-y-1.5 rounded-md border border-brand-600/40 bg-brand-600/10 p-2 text-xs">
-          <p className="font-medium text-ink">Copia esta clave ahora — no se puede volver a mostrar.</p>
+          <p className="font-medium text-ink">{t("admin.apikey_copy")}</p>
           <code className="block overflow-x-auto rounded bg-surface-2 p-1.5 text-[11px] break-all text-ink select-all">
             {justCreated.raw_key}
           </code>
           <Button variant="secondary" className="px-2 py-1 text-xs" onClick={() => setJustCreated(null)}>
-            Ya la copié
+            {t("admin.apikey_copied")}
           </Button>
         </div>
       )}
@@ -1135,7 +1137,7 @@ function ApiKeysSubsection({ userId, devices, canManage }: { userId: string; dev
       )}
 
       {keys.length === 0 ? (
-        <p className="text-xs text-ink-faint">Sin claves de API todavía.</p>
+        <p className="text-xs text-ink-faint">{t("admin.apikey_no_keys")}</p>
       ) : (
         <ul className="divide-y divide-line text-xs">
           {keys.map((k) => {
@@ -1147,22 +1149,22 @@ function ApiKeysSubsection({ userId, devices, canManage }: { userId: string; dev
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="truncate font-medium text-ink">{k.name}</span>
                     <Badge tone={k.can_write ? "warning" : "muted"}>
-                      {k.can_write ? "lectura/escritura" : "solo lectura"}
+                      {k.can_write ? t("admin.apikey_rw") : t("admin.apikey_ro")}
                     </Badge>
-                    {isRevoked && <Badge tone="danger">revocada</Badge>}
-                    {isExpired && <Badge tone="danger">expirada</Badge>}
+                    {isRevoked && <Badge tone="danger">{t("admin.apikey_revoked")}</Badge>}
+                    {isExpired && <Badge tone="danger">{t("admin.apikey_expired")}</Badge>}
                   </div>
                   <p className="text-[11px] text-ink-faint">
                     {k.key_prefix}… ·{" "}
                     {k.allowed_device_ids === null
-                      ? "todos los dispositivos"
-                      : `${k.allowed_device_ids.length} dispositivo(s)`}{" "}
-                    · {k.last_used_at ? `usada ${new Date(k.last_used_at).toLocaleString()}` : "nunca usada"}
+                      ? t("admin.apikey_all_devices")
+                      : t("admin.apikey_devices_count", { count: k.allowed_device_ids.length })}{" "}
+                    · {k.last_used_at ? new Date(k.last_used_at).toLocaleString() : t("admin.apikey_never_used")}
                   </p>
                 </div>
                 {canManage && !isRevoked && (
                   <Button variant="secondary" className="px-2 py-1 text-xs" onClick={() => onRevoke(k.id)}>
-                    Revocar
+                    {t("admin.apikey_revoke")}
                   </Button>
                 )}
               </li>
@@ -1185,6 +1187,7 @@ function ApiKeyCreateForm({
   onCreated: (created: ApiKeyCreated) => void;
   onCancel: () => void;
 }) {
+  const { t } = useTranslation();
   const [name, setName] = useState("");
   const [canWrite, setCanWrite] = useState(false);
   const [restrictDevices, setRestrictDevices] = useState(false);
@@ -1264,10 +1267,10 @@ function ApiKeyCreateForm({
       )}
       <div className="flex gap-2">
         <Button variant="secondary" className="px-2 py-1 text-xs" onClick={onSubmit} disabled={busy}>
-          Crear clave
+          {t("admin.apikey_create")}
         </Button>
         <Button variant="ghost" className="px-2 py-1 text-xs" onClick={onCancel}>
-          Cancelar
+          {t("admin.cancel")}
         </Button>
       </div>
     </div>
@@ -1278,6 +1281,7 @@ function ApiKeyCreateForm({
 // infra/postgres/migrations/0031_device_groups_and_assignments.sql) --
 // tenant_admin self-service, same as Vehicles/Drivers.
 export function DeviceGroupsSection({ tenantId, canManage }: { tenantId: string; canManage: boolean }) {
+  const { t } = useTranslation();
   const { searchInput, setSearchInput, setOffset, page, error, reload } = usePaginatedResource<DeviceGroup>((p) =>
     api.listDeviceGroups({ ...p, tenant_id: tenantId }),
   );
@@ -1345,16 +1349,16 @@ export function DeviceGroupsSection({ tenantId, canManage }: { tenantId: string;
         action={
           canManage && (
             <Button variant="secondary" className="px-2 py-1 text-xs" onClick={() => setShowCreate((v) => !v)}>
-              {showCreate ? "Cancelar" : "+ Nuevo grupo"}
+              {showCreate ? t("admin.cancel") : t("admin.group_new")}
             </Button>
           )
         }
       >
-        Grupos de dispositivos
+        {t("admin.groups_section")}
       </CardTitle>
 
       <Input
-        placeholder="Buscar por nombre..."
+        placeholder={t("admin.group_search")}
         value={searchInput}
         onChange={(e) => setSearchInput(e.target.value)}
         className="mb-3"
@@ -1363,14 +1367,14 @@ export function DeviceGroupsSection({ tenantId, canManage }: { tenantId: string;
       {showCreate && canManage && (
         <form onSubmit={onCreate} className="mb-3 flex gap-2 border border-line bg-surface-2 p-3">
           <Input
-            placeholder="nombre del grupo"
+            placeholder={t("admin.group_search")}
             required
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             className="flex-1"
           />
           <Button type="submit" disabled={busy}>
-            Crear
+            {t("admin.group_create")}
           </Button>
         </form>
       )}
@@ -1378,7 +1382,7 @@ export function DeviceGroupsSection({ tenantId, canManage }: { tenantId: string;
       {(error || formError) && <Alert>{error ?? formError}</Alert>}
 
       {!page || page.items.length === 0 ? (
-        <EmptyState>Sin grupos todavía.</EmptyState>
+        <EmptyState>{t("admin.group_empty")}</EmptyState>
       ) : (
         <div className="divide-y divide-line">
           {page.items.map((g) => (
@@ -1388,16 +1392,16 @@ export function DeviceGroupsSection({ tenantId, canManage }: { tenantId: string;
                   <div className="flex flex-1 gap-2">
                     <Input value={renameValue} onChange={(e) => setRenameValue(e.target.value)} className="flex-1" />
                     <Button className="px-2 py-1 text-xs" onClick={() => onRename(g.id)} disabled={busy}>
-                      Guardar
+                      {t("admin.save")}
                     </Button>
                     <Button variant="secondary" className="px-2 py-1 text-xs" onClick={() => setRenamingId(null)}>
-                      Cancelar
+                      {t("admin.cancel")}
                     </Button>
                   </div>
                 ) : (
                   <>
                     <span className="text-sm text-ink">
-                      {g.name} <span className="text-xs text-ink-faint">({g.device_count} dispositivos)</span>
+                      {g.name} <span className="text-xs text-ink-faint">({t("admin.group_devices", { count: g.device_count })})</span>
                     </span>
                     <div className="flex gap-2">
                       <Button
@@ -1405,7 +1409,7 @@ export function DeviceGroupsSection({ tenantId, canManage }: { tenantId: string;
                         className="px-2 py-1 text-xs"
                         onClick={() => setExpandedGroupId((id) => (id === g.id ? null : g.id))}
                       >
-                        {expandedGroupId === g.id ? "Cerrar" : "Miembros"}
+                        {expandedGroupId === g.id ? t("admin.group_close") : t("admin.group_members")}
                       </Button>
                       {canManage && (
                         <>
@@ -1417,10 +1421,10 @@ export function DeviceGroupsSection({ tenantId, canManage }: { tenantId: string;
                               setRenameValue(g.name);
                             }}
                           >
-                            Renombrar
+                            {t("admin.group_rename")}
                           </Button>
                           <Button variant="secondary" className="px-2 py-1 text-xs" onClick={() => onDelete(g.id)} disabled={busy}>
-                            Borrar
+                            {t("admin.group_delete")}
                           </Button>
                         </>
                       )}
@@ -1463,6 +1467,7 @@ function DeviceGroupMembersPicker({
   canManage: boolean;
   onSaved: () => void;
 }) {
+  const { t } = useTranslation();
   const [selected, setSelected] = useState<Set<string> | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1497,12 +1502,12 @@ function DeviceGroupMembersPicker({
   }
 
   if (error) return <Alert>{error}</Alert>;
-  if (!selected) return <div className="text-xs text-ink-faint">Cargando…</div>;
+  if (!selected) return <div className="text-xs text-ink-faint">{t("common.loading")}</div>;
 
   return (
     <div>
       {devices.length === 0 ? (
-        <div className="text-xs text-ink-faint">Este tenant no tiene dispositivos.</div>
+        <div className="text-xs text-ink-faint">{t("admin.group_no_devices")}</div>
       ) : (
         <div className="flex flex-wrap gap-x-4 gap-y-1">
           {devices.map((d) => (
@@ -1515,7 +1520,7 @@ function DeviceGroupMembersPicker({
       )}
       {canManage && (
         <Button variant="secondary" className="mt-2 px-2 py-1 text-xs" onClick={onSave} disabled={busy}>
-          Guardar miembros
+          {t("admin.group_save_members")}
         </Button>
       )}
     </div>
@@ -1535,6 +1540,7 @@ function UserCreateForm({
   defaultTenantId: string | null;
   onCreated: () => void;
 }) {
+  const { t } = useTranslation();
   // tenant_admin can only create users in its own tenant (the backend already
   // enforces it, see api/app/routers/users.py) -- locking the picker here is
   // just better UX, not the only barrier.
@@ -1638,7 +1644,7 @@ function UserCreateForm({
         </Select>
       )}
       <Button type="submit" disabled={busy} className="col-span-2 sm:col-span-4">
-        Crear usuario
+        {t("admin.user_create")}
       </Button>
       {error && (
         <div className="col-span-2 sm:col-span-4">
@@ -1665,6 +1671,7 @@ const WEBHOOK_EVENT_TYPE_LABELS: Record<string, string> = {
 };
 
 export function WebhookEndpointsSection({ tenantId, canManage }: { tenantId: string; canManage: boolean }) {
+  const { t } = useTranslation();
   const { page, error, reload, setOffset } = usePaginatedResource<WebhookEndpoint>((p) =>
     api.listWebhookEndpoints({ ...p, tenant_id: tenantId }),
   );
@@ -1743,7 +1750,7 @@ export function WebhookEndpointsSection({ tenantId, canManage }: { tenantId: str
           canManage &&
           !showCreate && (
             <Button variant="secondary" className="px-2 py-1 text-xs" onClick={() => setShowCreate(true)}>
-              + Nuevo webhook
+              {t("admin.webhook_new")}
             </Button>
           )
         }
@@ -1757,14 +1764,13 @@ export function WebhookEndpointsSection({ tenantId, canManage }: { tenantId: str
       {justCreated && (
         <div className="mb-3 space-y-1.5 rounded-md border border-brand-600/40 bg-brand-600/10 p-2 text-xs">
           <p className="font-medium text-ink">
-            Copia este secreto ahora — no se puede volver a mostrar. Úsalo para verificar la firma HMAC-SHA256 (header{" "}
-            <code>X-OpenMDVR-Signature</code>) de cada entrega.
+            {t("admin.webhook_copy_secret")}
           </p>
           <code className="block overflow-x-auto rounded bg-surface-2 p-1.5 text-[11px] break-all text-ink select-all">
             {justCreated.secret}
           </code>
           <Button variant="secondary" className="px-2 py-1 text-xs" onClick={() => setJustCreated(null)}>
-            Ya lo copié
+            {t("admin.webhook_copied")}
           </Button>
         </div>
       )}
@@ -1782,7 +1788,7 @@ export function WebhookEndpointsSection({ tenantId, canManage }: { tenantId: str
       )}
 
       {!page || page.items.length === 0 ? (
-        <EmptyState>Sin webhooks todavía.</EmptyState>
+        <EmptyState>{t("admin.webhook_empty")}</EmptyState>
       ) : (
         <ul className="divide-y divide-line text-sm">
           {page.items.map((w) => (
@@ -1791,13 +1797,13 @@ export function WebhookEndpointsSection({ tenantId, canManage }: { tenantId: str
                 <div className="min-w-0">
                   <p className="truncate font-medium text-ink">{w.url}</p>
                   <p className="text-xs text-ink-faint">
-                    {w.event_types.map((t) => WEBHOOK_EVENT_TYPE_LABELS[t] ?? t).join(", ")}
+                    {w.event_types.map((tp) => WEBHOOK_EVENT_TYPE_LABELS[tp] ?? tp).join(", ")}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
-                  <Badge tone={w.enabled ? "success" : "muted"}>{w.enabled ? "activo" : "desactivado"}</Badge>
+                  <Badge tone={w.enabled ? "success" : "muted"}>{w.enabled ? t("admin.webhook_active") : t("admin.webhook_disabled_badge")}</Badge>
                   {w.consecutive_failures > 0 && (
-                    <Badge tone="warning">{w.consecutive_failures} fallo(s) seguido(s)</Badge>
+                    <Badge tone="warning">{t("admin.webhook_failures", { count: w.consecutive_failures })}</Badge>
                   )}
                 </div>
               </div>
@@ -1808,7 +1814,7 @@ export function WebhookEndpointsSection({ tenantId, canManage }: { tenantId: str
                   className="px-2 py-1 text-xs"
                   onClick={() => setExpandedId(expandedId === w.id ? null : w.id)}
                 >
-                  {expandedId === w.id ? "Ocultar entregas" : "Ver entregas"}
+                  {expandedId === w.id ? t("admin.webhook_hide") : t("admin.webhook_show")}
                 </Button>
                 {canManage && (
                   <>
@@ -1818,20 +1824,20 @@ export function WebhookEndpointsSection({ tenantId, canManage }: { tenantId: str
                       disabled={testResults[w.id] === "running"}
                       onClick={() => onTest(w.id)}
                     >
-                      {testResults[w.id] === "running" ? "Enviando..." : "Enviar prueba"}
+                      {testResults[w.id] === "running" ? t("admin.webhook_sending") : t("admin.webhook_send_test")}
                     </Button>
                     <Button variant="secondary" className="px-2 py-1 text-xs" onClick={() => onToggleEnabled(w)}>
-                      {w.enabled ? "Desactivar" : "Activar"}
+                      {w.enabled ? t("admin.webhook_deactivate") : t("admin.webhook_activate")}
                     </Button>
                     <Button variant="secondary" className="px-2 py-1 text-xs" onClick={() => onRotate(w.id)}>
-                      Rotar secreto
+                      {t("admin.webhook_rotate")}
                     </Button>
                     <Button
                       variant="ghost"
                       className={`px-2 py-1 text-xs ${deleteArmedId === w.id ? "text-red-400" : ""}`}
                       onClick={() => onDelete(w.id)}
                     >
-                      {deleteArmedId === w.id ? "¿Borrar? Confirmar" : "Borrar"}
+                      {deleteArmedId === w.id ? t("admin.webhook_delete_confirm") : t("admin.webhook_delete")}
                     </Button>
                   </>
                 )}

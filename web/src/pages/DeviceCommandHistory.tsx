@@ -1,24 +1,8 @@
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams, Link } from "react-router-dom";
-import { api, ApiError, type DeviceCommand, type DeviceCommandStatus, type DeviceCommandType } from "../lib/api";
+import { useTranslation } from "react-i18next";
+import { api, ApiError, type DeviceCommand, type DeviceCommandStatus } from "../lib/api";
 import { Alert, Badge, Card, EmptyState, Field, PageContainer, PageHeader, Pagination, type BadgeTone } from "../components/ui";
-
-// Full engine command history of ONE unit -- linked from "view full history" in
-// DeviceDetailPanel.tsx. Paginated with a date filter. Same native date input
-// pattern (<input type="date">, no library) as Reports.tsx, and the same
-// Pagination component as the Administration tables.
-const ENGINE_COMMAND_LABEL: Record<DeviceCommandType, string> = {
-  engine_stop: "Cortar motor",
-  engine_resume: "Reconectar motor",
-};
-
-const COMMAND_STATUS_LABEL: Record<DeviceCommandStatus, string> = {
-  pending: "en curso",
-  success: "éxito",
-  failed: "falló",
-  timeout: "sin respuesta",
-  device_offline: "sin conexión",
-};
 
 const COMMAND_STATUS_TONE: Record<DeviceCommandStatus, BadgeTone> = {
   pending: "brand",
@@ -48,6 +32,7 @@ const dateInputClass =
   "block w-full rounded-sm border border-line-strong bg-surface-2 px-2.5 py-1.5 text-sm text-ink outline-none focus:border-brand-600 focus:ring-1 focus:ring-brand-600";
 
 export default function DeviceCommandHistory() {
+  const { t } = useTranslation();
   const { deviceId } = useParams<{ deviceId: string }>();
   const [searchParams] = useSearchParams();
   const deviceLabel = searchParams.get("device_label");
@@ -76,13 +61,13 @@ export default function DeviceCommandHistory() {
   return (
     <PageContainer>
       <PageHeader
-        title="Historial de comandos"
-        description={deviceLabel ? `Unidad: ${deviceLabel}` : "Comandos de motor enviados a esta unidad."}
+        title={t("cmd_history.title")}
+        description={deviceLabel ? `Unidad: ${deviceLabel}` : undefined}
       />
 
       <Card className="space-y-3">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <Field label="Desde">
+          <Field label={t("common.from")}>
             <input
               type="date"
               value={dateFrom}
@@ -93,7 +78,7 @@ export default function DeviceCommandHistory() {
               className={dateInputClass}
             />
           </Field>
-          <Field label="Hasta">
+          <Field label={t("common.to")}>
             <input
               type="date"
               value={dateTo}
@@ -115,7 +100,7 @@ export default function DeviceCommandHistory() {
               setDateTo("");
             }}
           >
-            Quitar filtro de fecha
+            {t("cmd_history.clear_filter")}
           </button>
         )}
       </Card>
@@ -124,10 +109,10 @@ export default function DeviceCommandHistory() {
 
       <Card>
         {page == null ? (
-          <p className="text-sm text-ink-faint">Cargando…</p>
+          <p className="text-sm text-ink-faint">{t("common.loading")}</p>
         ) : page.items.length === 0 ? (
           <EmptyState>
-            {dateFrom || dateTo ? "Sin comandos en ese rango de fechas." : "Sin comandos enviados todavía."}
+            {dateFrom || dateTo ? t("cmd_history.no_results_filtered") : t("cmd_history.no_results")}
           </EmptyState>
         ) : (
           <>
@@ -135,18 +120,18 @@ export default function DeviceCommandHistory() {
               {page.items.map((c) => (
                 <li key={c.id} className="space-y-1 py-3">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium text-ink">{ENGINE_COMMAND_LABEL[c.command_type]}</span>
-                    <Badge tone={COMMAND_STATUS_TONE[c.status]}>{COMMAND_STATUS_LABEL[c.status]}</Badge>
+                    <span className="text-sm font-medium text-ink">{t(`cmd_history.cmd_${c.command_type}`)}</span>
+                    <Badge tone={COMMAND_STATUS_TONE[c.status]}>{t(`cmd_history.status_${c.status === "device_offline" ? "offline" : c.status}`)}</Badge>
                   </div>
                   <p className="text-xs text-ink-dim">
-                    Pedido por {c.requested_by_email} · {new Date(c.requested_at).toLocaleString()}
+                    {t("cmd_history.requested_by")} {c.requested_by_email} · {new Date(c.requested_at).toLocaleString()}
                   </p>
                   <p className="text-xs text-ink-dim">
-                    {c.completed_at ? <>Resuelto: {new Date(c.completed_at).toLocaleString()}</> : <>Aún en curso, sin resolver</>}
+                    {c.completed_at ? <>{t("cmd_history.resolved_at")} {new Date(c.completed_at).toLocaleString()}</> : <>{t("cmd_history.in_progress")}</>}
                   </p>
                   <p className="text-xs text-ink-dim">
-                    Respuesta del dispositivo:{" "}
-                    {c.device_reply ? <span className="font-data text-ink">{c.device_reply}</span> : "(sin texto)"}
+                    {t("cmd_history.device_reply")}{" "}
+                    {c.device_reply ? <span className="font-data text-ink">{c.device_reply}</span> : t("cmd_history.no_reply")}
                   </p>
                 </li>
               ))}
@@ -159,7 +144,7 @@ export default function DeviceCommandHistory() {
       </Card>
 
       <Link to="/map" className="text-sm font-medium text-brand-700 hover:underline">
-        ← Volver al mapa
+        {t("cmd_history.back_to_map")}
       </Link>
     </PageContainer>
   );

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { api, ApiError, type Tenant, type TenantProfitability, type Vehicle } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { Alert, Badge, Card, CardTitle, EmptyState, PageContainer, PageHeader } from "../components/ui";
@@ -36,6 +37,7 @@ type WorkspaceTab = "devices" | "fleet" | "access" | "billing" | "branding";
 const WORKSPACE_TAB_IDS: WorkspaceTab[] = ["devices", "fleet", "access", "billing", "branding"];
 
 export default function TenantWorkspace() {
+  const { t } = useTranslation();
   const { tenantId: routeTenantId } = useParams<{ tenantId: string }>();
   const { isPlatform, tenantId: ownSessionTenantId, role } = useAuth();
   const navigate = useNavigate();
@@ -146,11 +148,11 @@ export default function TenantWorkspace() {
   );
 
   const allTabs: { id: WorkspaceTab; label: string; visible: boolean }[] = [
-    { id: "devices", label: "Dispositivos", visible: true },
-    { id: "fleet", label: "Vehículos y choferes", visible: true },
-    { id: "access", label: "Usuarios y accesos", visible: canSeeAccessTab },
-    { id: "billing", label: "Facturación", visible: isPlatform },
-    { id: "branding", label: "Marca y política", visible: canSeeBrandingTab },
+    { id: "devices", label: t("workspace.tab_devices"), visible: true },
+    { id: "fleet", label: t("workspace.tab_fleet"), visible: true },
+    { id: "access", label: t("workspace.tab_access"), visible: canSeeAccessTab },
+    { id: "billing", label: t("workspace.tab_billing"), visible: isPlatform },
+    { id: "branding", label: t("workspace.tab_branding"), visible: canSeeBrandingTab },
   ];
   const tabs = allTabs.filter((t) => t.visible);
 
@@ -168,25 +170,25 @@ export default function TenantWorkspace() {
     <PageContainer>
       {isPlatform && (
         <Link to="/admin" className="mb-2 inline-block text-xs text-ink-dim hover:text-ink hover:underline">
-          ← Volver a Tenants
+          {t("workspace.back")}
         </Link>
       )}
       <PageHeader
-        title={tenant?.name ?? "Cargando…"}
-        description={tenant ? `Estado: ${tenant.status}` : undefined}
+        title={tenant?.name ?? t("common.loading")}
+        description={tenant ? t("workspace.status_prefix", { status: tenant.status }) : undefined}
       />
 
       {error && <Alert>{error}</Alert>}
 
       {!tenant ? (
-        <EmptyState>Cargando…</EmptyState>
+        <EmptyState>{t("common.loading")}</EmptyState>
       ) : (
         <div className="space-y-4">
           <Card>
-            <CardTitle>Resumen</CardTitle>
+            <CardTitle>{t("workspace.summary_title")}</CardTitle>
             <div className="flex flex-wrap gap-6 text-sm">
               <div>
-                <div className="text-xs text-ink-faint uppercase">Cámaras (JT808)</div>
+                <div className="text-xs text-ink-faint uppercase">{t("workspace.cameras_label")}</div>
                 <div className="mt-1">
                   {cameraDeviceCount === null ? (
                     "—"
@@ -200,13 +202,13 @@ export default function TenantWorkspace() {
                             : "success"
                       }
                     >
-                      {cameraDeviceCount} de {tenant.camera_device_quota} contratados
+                      {t("workspace.contracted", { count: cameraDeviceCount, quota: tenant.camera_device_quota })}
                     </Badge>
                   )}
                 </div>
               </div>
               <div>
-                <div className="text-xs text-ink-faint uppercase">GPS (GT06)</div>
+                <div className="text-xs text-ink-faint uppercase">{t("workspace.gps_label")}</div>
                 <div className="mt-1">
                   {gpsDeviceCount === null ? (
                     "—"
@@ -220,14 +222,14 @@ export default function TenantWorkspace() {
                             : "success"
                       }
                     >
-                      {gpsDeviceCount} de {tenant.gps_device_quota} contratados
+                      {t("workspace.contracted", { count: gpsDeviceCount, quota: tenant.gps_device_quota })}
                     </Badge>
                   )}
                 </div>
               </div>
               {isPlatform && (
                 <div>
-                  <div className="text-xs text-ink-faint uppercase">Rentabilidad estimada</div>
+                  <div className="text-xs text-ink-faint uppercase">{t("workspace.profitability_label")}</div>
                   <div className="mt-1">
                     {profitability ? (
                       <Badge
@@ -241,7 +243,7 @@ export default function TenantWorkspace() {
                                 : "success"
                         }
                       >
-                        {profitability.margin_pct === null ? "sin ingreso" : `${profitability.margin_pct.toFixed(1)}% margen`}
+                        {profitability.margin_pct === null ? t("workspace.no_income") : t("workspace.margin", { pct: profitability.margin_pct.toFixed(1) })}
                       </Badge>
                     ) : (
                       "—"

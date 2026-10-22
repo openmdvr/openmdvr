@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams, Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import {
   api,
   ApiError,
@@ -290,12 +291,12 @@ const COMMAND_FIELDS: Record<DeviceConfigCommandKey, FieldDef[]> = {
   ],
 };
 
-const STATUS_LABEL: Record<DeviceConfigCommandStatus, string> = {
-  pending: "en curso",
-  success: "éxito",
-  failed: "falló",
-  timeout: "sin respuesta",
-  device_offline: "sin conexión",
+const STATUS_KEY: Record<DeviceConfigCommandStatus, string> = {
+  pending: "device_config.status_pending",
+  success: "device_config.status_success",
+  failed: "device_config.status_failed",
+  timeout: "device_config.status_timeout",
+  device_offline: "device_config.status_offline",
 };
 
 const STATUS_TONE: Record<DeviceConfigCommandStatus, BadgeTone> = {
@@ -328,6 +329,7 @@ function buildParamsPayload(key: DeviceConfigCommandKey, raw: Record<string, str
 const PAGE_LIMIT = 20;
 
 export default function DeviceConfigCommands() {
+  const { t } = useTranslation();
   const { deviceId } = useParams<{ deviceId: string }>();
   const [searchParams] = useSearchParams();
   const deviceLabel = searchParams.get("device_label") ?? "esta unidad";
@@ -394,18 +396,18 @@ export default function DeviceConfigCommands() {
   return (
     <PageContainer>
       <PageHeader
-        title="Configuración del dispositivo"
+        title={t("device_config.title")}
         description={`Unidad: ${deviceLabel} · comandos de configuración GT06 (solo plataforma)`}
       />
 
       <Card className="space-y-3">
-        <CardTitle>Enviar comando</CardTitle>
+        <CardTitle>{t("device_config.send_section")}</CardTitle>
         {error && <Alert>{error}</Alert>}
         {!canSendCommands && (
-          <Alert>Tu cuenta puede ver el historial de esta unidad, pero solo el rol super_admin puede enviar comandos nuevos.</Alert>
+          <Alert>{t("device_config.support_note")}</Alert>
         )}
 
-        <Field label="Comando">
+        <Field label={t("device_config.field_command")}>
           <Select value={commandKey} onChange={(e) => selectCommand(e.target.value as DeviceConfigCommandKey)} disabled={!canSendCommands}>
             {COMMAND_GROUPS.map((group) => (
               <optgroup key={group.label} label={group.label}>
@@ -461,28 +463,28 @@ export default function DeviceConfigCommands() {
         )}
 
         <Button disabled={!canSend} onClick={send}>
-          {busy ? "Enviando…" : "Enviar comando"}
+          {busy ? t("device_config.btn_sending") : t("device_config.btn_send")}
         </Button>
 
         {lastResult && (
           <div className="space-y-1 rounded-sm border border-line-strong bg-surface-2 p-2 text-xs">
             <div className="flex items-center justify-between">
               <span className="font-data text-ink">{lastResult.raw_text}</span>
-              <Badge tone={STATUS_TONE[lastResult.status]}>{STATUS_LABEL[lastResult.status]}</Badge>
+              <Badge tone={STATUS_TONE[lastResult.status]}>{t(STATUS_KEY[lastResult.status])}</Badge>
             </div>
             <p className="text-ink-dim">
-              Respuesta del dispositivo: {lastResult.device_reply ? <span className="font-data text-ink">{lastResult.device_reply}</span> : "(sin texto)"}
+              {t("device_config.device_reply")} {lastResult.device_reply ? <span className="font-data text-ink">{lastResult.device_reply}</span> : t("device_config.no_reply")}
             </p>
           </div>
         )}
       </Card>
 
       <Card>
-        <CardTitle>Historial de cambios</CardTitle>
+        <CardTitle>{t("device_config.history_section")}</CardTitle>
         {page == null ? (
-          <p className="text-sm text-ink-faint">Cargando…</p>
+          <p className="text-sm text-ink-faint">{t("common.loading")}</p>
         ) : page.items.length === 0 ? (
-          <EmptyState>Sin comandos de configuración enviados todavía.</EmptyState>
+          <EmptyState>{t("device_config.no_history")}</EmptyState>
         ) : (
           <>
             <ul className="divide-y divide-line">
@@ -490,14 +492,14 @@ export default function DeviceConfigCommands() {
                 <li key={c.id} className="space-y-1 py-3">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm font-medium text-ink">{COMMAND_LABEL[c.command_key]}</span>
-                    <Badge tone={STATUS_TONE[c.status]}>{STATUS_LABEL[c.status]}</Badge>
+                    <Badge tone={STATUS_TONE[c.status]}>{t(STATUS_KEY[c.status])}</Badge>
                   </div>
                   <p className="font-data text-xs text-ink-dim">{c.raw_text}</p>
                   <p className="text-xs text-ink-dim">
-                    Pedido por {c.requested_by_email} · {new Date(c.requested_at).toLocaleString()}
+                    {t("device_config.requested_by")} {c.requested_by_email} · {new Date(c.requested_at).toLocaleString()}
                   </p>
                   <p className="text-xs text-ink-dim">
-                    Respuesta del dispositivo: {c.device_reply ? <span className="font-data text-ink">{c.device_reply}</span> : "(sin texto)"}
+                    {t("device_config.device_reply")} {c.device_reply ? <span className="font-data text-ink">{c.device_reply}</span> : t("device_config.no_reply")}
                   </p>
                 </li>
               ))}
@@ -510,7 +512,7 @@ export default function DeviceConfigCommands() {
       </Card>
 
       <Link to="/admin" className="text-sm font-medium text-brand-700 hover:underline">
-        ← Volver a Administración
+        {t("device_config.back_to_admin")}
       </Link>
     </PageContainer>
   );

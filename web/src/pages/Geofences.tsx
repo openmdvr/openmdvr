@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Circle, CircleMarker, MapContainer, Marker, Polygon, Polyline, Tooltip, useMap, useMapEvents } from "react-leaflet";
@@ -229,6 +230,7 @@ function Toggle({ checked, onChange, label, hint }: { checked: boolean; onChange
 }
 
 export default function Geofences() {
+  const { t } = useTranslation();
   const { role, isPlatform, tenantId: ownTenantId } = useAuth();
   const canManage = isPlatform || role === "tenant_admin";
   const navigate = useNavigate();
@@ -450,11 +452,11 @@ export default function Geofences() {
       <CardTitle
         action={
           <button onClick={() => setDraft(null)} className="text-xs text-ink-dim hover:text-ink">
-            Cancelar
+            {t("device_detail.cancel")}
           </button>
         }
       >
-        {draft.id ? "Editar geocerca" : "Nueva geocerca"}
+        {draft.id ? t("geofences.editor_edit") : t("geofences.editor_new")}
       </CardTitle>
       {error && <Alert>{error}</Alert>}
 
@@ -462,7 +464,7 @@ export default function Geofences() {
         <Field label="Tenant">
           <Select value={draft.tenant_id} onChange={(e) => setDraft({ ...draft, tenant_id: e.target.value, device_ids: [] })}>
             <option value="" disabled>
-              Selecciona...
+              {t("common.select_placeholder")}
             </option>
             {tenants.map((t) => (
               <option key={t.id} value={t.id}>
@@ -473,12 +475,12 @@ export default function Geofences() {
         </Field>
       )}
 
-      <Field label="Nombre">
-        <Input value={draft.name} maxLength={120} placeholder="Ej. Bodega Norte" onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+      <Field label={t("geofences.field_name")}>
+        <Input value={draft.name} maxLength={120} placeholder={t("geofences.field_name_placeholder")} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
       </Field>
 
       <div className="space-y-2">
-        <span className="text-xs font-medium text-ink-dim">Color</span>
+        <span className="text-xs font-medium text-ink-dim">{t("geofences.color_label")}</span>
         <div className="flex flex-wrap gap-2">
           {GEOFENCE_PALETTE.map((c) => (
             <button
@@ -494,7 +496,7 @@ export default function Geofences() {
       </div>
 
       <div className="space-y-2">
-        <span className="text-xs font-medium text-ink-dim">Forma</span>
+        <span className="text-xs font-medium text-ink-dim">{t("geofences.shape_label")}</span>
         <div className="grid grid-cols-2 gap-2">
           {(["circle", "polygon"] as const).map((shape) => (
             <button
@@ -505,23 +507,23 @@ export default function Geofences() {
                 draft.shape === shape ? "border-brand-600 bg-brand-600/15 text-brand-500" : "border-line-strong bg-surface-2 text-ink-dim"
               }`}
             >
-              {shape === "circle" ? "Círculo" : "Polígono"}
+              {shape === "circle" ? t("geofences.shape_circle") : t("geofences.shape_polygon")}
             </button>
           ))}
         </div>
         <p className="text-xs text-ink-dim">
           {draft.shape === "circle"
             ? draft.center
-              ? "Toca el mapa para mover el centro, o arrastra el punto."
-              : "Toca el mapa para fijar el centro."
+              ? t("geofences.move_center")
+              : t("geofences.touch_center")
             : draft.polygon.length < 3
-              ? `Toca el mapa para agregar vértices (${draft.polygon.length}/3 mínimo).`
-              : `${draft.polygon.length} vértices · ${formatArea(polygonAreaM2(draft.polygon))}. Arrastra un punto para ajustarlo.`}
+              ? t("geofences.touch_vertices", { current: draft.polygon.length })
+              : t("geofences.polygon_ready", { count: draft.polygon.length, area: formatArea(polygonAreaM2(draft.polygon)) })}
         </p>
         {draft.shape === "circle" ? (
           <div className="space-y-1">
             <div className="flex items-center justify-between text-xs text-ink-dim">
-              <span>Radio</span>
+              <span>{t("geofences.radius_label")}</span>
               <span className="font-medium text-ink">{Math.round(draft.radius_m)} m</span>
             </div>
             <input
@@ -544,27 +546,27 @@ export default function Geofences() {
         ) : (
           <div className="flex gap-2">
             <Button variant="secondary" disabled={draft.polygon.length === 0} onClick={() => setDraft({ ...draft, polygon: draft.polygon.slice(0, -1) })}>
-              Deshacer punto
+              {t("geofences.undo_point")}
             </Button>
             <Button variant="ghost" disabled={draft.polygon.length === 0} onClick={() => setDraft({ ...draft, polygon: [] })}>
-              Limpiar
+              {t("geofences.clear_polygon")}
             </Button>
           </div>
         )}
       </div>
 
       <div className="space-y-2">
-        <span className="text-xs font-medium text-ink-dim">Notificar cuando una unidad…</span>
-        <Toggle checked={draft.notify_on_enter} onChange={(v) => setDraft({ ...draft, notify_on_enter: v })} label="Entra" />
-        <Toggle checked={draft.notify_on_exit} onChange={(v) => setDraft({ ...draft, notify_on_exit: v })} label="Sale" />
+        <span className="text-xs font-medium text-ink-dim">{t("geofences.notify_section")}</span>
+        <Toggle checked={draft.notify_on_enter} onChange={(v) => setDraft({ ...draft, notify_on_enter: v })} label={t("geofences.notify_enter")} />
+        <Toggle checked={draft.notify_on_exit} onChange={(v) => setDraft({ ...draft, notify_on_exit: v })} label={t("geofences.notify_exit")} />
         <Toggle
           checked={draft.dwell_enabled}
           onChange={(v) => setDraft({ ...draft, dwell_enabled: v })}
-          label="Permanece adentro"
-          hint="Una notificación por visita al cumplir el tiempo."
+          label={t("geofences.notify_dwell")}
+          hint={t("geofences.notify_dwell_hint")}
         />
         {draft.dwell_enabled && (
-          <Field label="Minutos de permanencia">
+          <Field label={t("geofences.dwell_minutes_label")}>
             <Input
               type="number"
               min={1}
@@ -574,10 +576,10 @@ export default function Geofences() {
             />
           </Field>
         )}
-        <p className="text-xs text-ink-dim">Todos los eventos quedan en el reporte aunque no notifiquen.</p>
+        <p className="text-xs text-ink-dim">{t("geofences.all_events_note")}</p>
       </div>
 
-      <Field label="Importancia de la notificación">
+      <Field label={t("geofences.severity_label")}>
         <Select value={draft.severity} onChange={(e) => setDraft({ ...draft, severity: e.target.value as AlarmSeverity })}>
           {(["info", "warning", "critical"] as const).map((s) => (
             <option key={s} value={s}>
@@ -588,7 +590,7 @@ export default function Geofences() {
       </Field>
 
       <div className="space-y-2">
-        <span className="text-xs font-medium text-ink-dim">Aplica a</span>
+        <span className="text-xs font-medium text-ink-dim">{t("geofences.applies_label")}</span>
         <div className="grid grid-cols-2 gap-2">
           {[true, false].map((all) => (
             <button
@@ -601,13 +603,13 @@ export default function Geofences() {
                   : "border-line-strong bg-surface-2 text-ink-dim"
               }`}
             >
-              {all ? "Todas las unidades" : "Unidades elegidas"}
+              {all ? t("geofences.applies_all") : t("geofences.applies_chosen")}
             </button>
           ))}
         </div>
         {!draft.applies_to_all_devices && (
           <div className="space-y-2">
-            <Input placeholder="Buscar unidad..." value={deviceFilter} onChange={(e) => setDeviceFilter(e.target.value)} />
+            <Input placeholder={t("geofences.search_unit")} value={deviceFilter} onChange={(e) => setDeviceFilter(e.target.value)} />
             <div className="max-h-48 space-y-1 overflow-y-auto rounded-sm border border-line-strong p-2">
               {draftTenantDevices
                 .filter((d) => d.label.toLowerCase().includes(deviceFilter.trim().toLowerCase()))
@@ -627,17 +629,17 @@ export default function Geofences() {
                     {d.label}
                   </label>
                 ))}
-              {draftTenantDevices.length === 0 && <p className="text-xs text-ink-dim">Este tenant no tiene unidades.</p>}
+              {draftTenantDevices.length === 0 && <p className="text-xs text-ink-dim">{t("geofences.no_units")}</p>}
             </div>
-            <p className="text-xs text-ink-dim">{draft.device_ids.length} seleccionadas</p>
+            <p className="text-xs text-ink-dim">{t("geofences.selected_count", { count: draft.device_ids.length })}</p>
           </div>
         )}
       </div>
 
       <details className="rounded-sm border border-line-strong bg-surface-2 px-3 py-2">
-        <summary className="cursor-pointer text-sm font-medium text-ink">Opciones avanzadas</summary>
+        <summary className="cursor-pointer text-sm font-medium text-ink">{t("geofences.advanced_options")}</summary>
         <div className="mt-3 space-y-3">
-          <Field label="Tolerancia de GPS al salir (m)">
+          <Field label={t("geofences.hysteresis_label")}>
             <Input
               type="number"
               min={0}
@@ -646,11 +648,11 @@ export default function Geofences() {
               onChange={(e) => setDraft({ ...draft, hysteresis_m: Number(e.target.value) })}
             />
           </Field>
-          <p className="text-xs text-ink-dim">Evita avisos repetidos cuando una unidad se estaciona justo en el borde.</p>
-          <Field label="Descripción">
+          <p className="text-xs text-ink-dim">{t("geofences.hysteresis_hint")}</p>
+          <Field label={t("geofences.description_label")}>
             <Input value={draft.description} maxLength={1000} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
           </Field>
-          <Toggle checked={draft.enabled} onChange={(v) => setDraft({ ...draft, enabled: v })} label="Geocerca activa" />
+          <Toggle checked={draft.enabled} onChange={(v) => setDraft({ ...draft, enabled: v })} label={t("geofences.active_toggle")} />
         </div>
       </details>
 
@@ -660,11 +662,11 @@ export default function Geofences() {
           disabled={saving || !draft.name.trim() || !geometryReady(draft) || (isPlatform && !draft.tenant_id)}
           onClick={save}
         >
-          {saving ? "Guardando..." : "Guardar"}
+          {saving ? t("geofences.btn_saving") : t("geofences.btn_save")}
         </Button>
         {draft.id && (
           <Button variant={deleteArmed ? "primary" : "secondary"} className={deleteArmed ? "bg-red-600 hover:bg-red-700" : ""} disabled={saving} onClick={remove}>
-            {deleteArmed ? "¿Borrar? Confirmar" : "Borrar"}
+            {deleteArmed ? t("geofences.btn_delete_confirm") : t("geofences.btn_delete")}
           </Button>
         )}
       </div>
@@ -676,7 +678,7 @@ export default function Geofences() {
       <CardTitle
         action={
           <button onClick={() => select(null)} className="text-xs text-ink-dim hover:text-ink">
-            Cerrar
+            {t("geofences.detail_close")}
           </button>
         }
       >
@@ -687,34 +689,34 @@ export default function Geofences() {
       </CardTitle>
       <div className="grid grid-cols-2 gap-3 text-sm">
         <div>
-          <p className="text-xs text-ink-dim">Tamaño</p>
+          <p className="text-xs text-ink-dim">{t("geofences.detail_size")}</p>
           <p className="font-medium text-ink">{geofenceSizeLabel(selected)}</p>
         </div>
         <div>
-          <p className="text-xs text-ink-dim">Unidades adentro</p>
+          <p className="text-xs text-ink-dim">{t("geofences.detail_inside_count")}</p>
           <p className="font-medium text-ink">{selected.inside_count}</p>
         </div>
         <div>
-          <p className="text-xs text-ink-dim">Notifica</p>
+          <p className="text-xs text-ink-dim">{t("geofences.detail_notifies")}</p>
           <p className="font-medium text-ink">
-            {[selected.notify_on_enter && "entrada", selected.notify_on_exit && "salida", selected.dwell_minutes && `${selected.dwell_minutes} min adentro`]
+            {[selected.notify_on_enter && t("geofences.detail_notify_enter"), selected.notify_on_exit && t("geofences.detail_notify_exit"), selected.dwell_minutes && t("geofences.detail_notify_dwell", { minutes: selected.dwell_minutes })]
               .filter(Boolean)
-              .join(" · ") || "no (solo reporte)"}
+              .join(" · ") || t("geofences.detail_no_notify")}
           </p>
         </div>
         <div>
-          <p className="text-xs text-ink-dim">Aplica a</p>
+          <p className="text-xs text-ink-dim">{t("geofences.detail_applies")}</p>
           <p className="font-medium text-ink">
-            {selected.applies_to_all_devices ? "Todas las unidades" : `${selected.device_ids.length} unidades`}
+            {selected.applies_to_all_devices ? t("geofences.detail_applies_all") : t("geofences.detail_applies_count", { count: selected.device_ids.length })}
           </p>
         </div>
       </div>
       {selected.description && <p className="text-sm text-ink-dim">{selected.description}</p>}
 
       <div className="space-y-2">
-        <p className="text-xs font-semibold tracking-wide text-ink-dim uppercase">Adentro ahora</p>
+        <p className="text-xs font-semibold tracking-wide text-ink-dim uppercase">{t("geofences.detail_inside_now")}</p>
         {occupants.length === 0 ? (
-          <p className="text-sm text-ink-dim">Ninguna unidad.</p>
+          <p className="text-sm text-ink-dim">{t("geofences.detail_no_inside")}</p>
         ) : (
           <ul className="divide-y divide-line">
             {occupants.map((o) => (
@@ -734,9 +736,9 @@ export default function Geofences() {
       </div>
 
       <div className="space-y-2">
-        <p className="text-xs font-semibold tracking-wide text-ink-dim uppercase">Últimas 24 horas</p>
+        <p className="text-xs font-semibold tracking-wide text-ink-dim uppercase">{t("geofences.detail_last_24h")}</p>
         {recentEvents.length === 0 ? (
-          <p className="text-sm text-ink-dim">Sin eventos.</p>
+          <p className="text-sm text-ink-dim">{t("geofences.detail_no_events")}</p>
         ) : (
           <ul className="divide-y divide-line">
             {recentEvents.map((e) => (
@@ -758,10 +760,10 @@ export default function Geofences() {
       {canManage && (
         <div className="flex flex-wrap gap-2">
           <Button className="flex-1" onClick={() => startEdit(selected)}>
-            Editar
+            {t("geofences.detail_edit")}
           </Button>
           <Button variant="secondary" onClick={() => toggleEnabled(selected)}>
-            {selected.enabled ? "Pausar" : "Activar"}
+            {selected.enabled ? t("geofences.detail_pause") : t("geofences.detail_activate")}
           </Button>
         </div>
       )}
@@ -770,18 +772,18 @@ export default function Geofences() {
 
   const list = (
     <Card className="space-y-3">
-      <CardTitle>{`Geocercas (${geofences.length})`}</CardTitle>
+      <CardTitle>{t("geofences.list_title", { count: geofences.length })}</CardTitle>
       {error && !editing && <Alert>{error}</Alert>}
-      <Input placeholder="Buscar geocerca..." value={search} onChange={(e) => setSearch(e.target.value)} />
+      <Input placeholder={t("geofences.search_placeholder")} value={search} onChange={(e) => setSearch(e.target.value)} />
       {!loaded ? (
-        <p className="py-6 text-center text-sm text-ink-dim">Cargando...</p>
+        <p className="py-6 text-center text-sm text-ink-dim">{t("common.loading")}</p>
       ) : filtered.length === 0 ? (
         <EmptyState>
           {geofences.length === 0
             ? canManage
-              ? "Todavía no hay geocercas. Crea la primera con “Nueva geocerca”."
-              : "Todavía no hay geocercas en tu flota."
-            : "Ninguna coincide con la búsqueda."}
+              ? t("geofences.empty_admin")
+              : t("geofences.empty_fleet")
+            : t("geofences.empty_search")}
         </EmptyState>
       ) : (
         <ul className="divide-y divide-line">
@@ -803,7 +805,7 @@ export default function Geofences() {
                   </span>
                 </span>
                 <span className="flex shrink-0 flex-col items-end gap-1">
-                  {g.enabled ? <Badge tone={SEVERITY_TONE[g.severity]}>{g.inside_count} adentro</Badge> : <Badge tone="muted">pausada</Badge>}
+                  {g.enabled ? <Badge tone={SEVERITY_TONE[g.severity]}>{t("geofences.inside_badge", { count: g.inside_count })}</Badge> : <Badge tone="muted">{t("geofences.paused_badge")}</Badge>}
                 </span>
               </button>
             </li>
@@ -816,12 +818,12 @@ export default function Geofences() {
   return (
     <PageContainer wide>
       <PageHeader
-        title="Geocercas"
-        description="Zonas en el mapa que generan avisos cuando una unidad entra, sale o permanece."
+        title={t("geofences.page_title")}
+        description={t("geofences.page_description")}
         action={
           canManage && !editing ? (
             <Button onClick={startCreate} disabled={isPlatform && tenants.length === 0}>
-              + Nueva geocerca
+              {t("geofences.new_btn")}
             </Button>
           ) : undefined
         }
