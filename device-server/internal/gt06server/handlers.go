@@ -686,6 +686,12 @@ func handleVideoEventReport(ctx context.Context, pool *pgxpool.Pool, sess *connS
 
 	if sess.seenVideoEvents == nil {
 		sess.seenVideoEvents = make(map[string]struct{})
+	} else if len(sess.seenVideoEvents) >= 1000 {
+		// Reset rather than grow without bound: a misbehaving device sending
+		// unique timestamps on every 0x95 frame would otherwise exhaust
+		// memory over a long-lived connection. A reset at 1000 can cause a
+		// duplicate alarm in a narrow window, which is an accepted trade-off.
+		sess.seenVideoEvents = make(map[string]struct{})
 	}
 
 	for _, g := range groups {

@@ -324,6 +324,14 @@ func (d *Dispatcher) handlePlayAuth(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"code": -1, "msg": "unauthorized"})
 		return
 	}
+	if ticket.TenantID == "" {
+		// A ticket with no tenant indicates a bug in the issuing path; reject
+		// it rather than serving a stream that cannot be attributed to any
+		// tenant for metering or audit purposes.
+		log.Printf("videobridge: on_play rejected (ticket has empty tenant) stream=%q", req.Stream)
+		writeJSON(w, http.StatusOK, map[string]any{"code": -1, "msg": "unauthorized"})
+		return
+	}
 
 	// The ticket must match the SAME app it was minted for, not just the
 	// same deviceKey. Security finding (F6): two protocols can have

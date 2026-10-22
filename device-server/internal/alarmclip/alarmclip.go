@@ -673,6 +673,11 @@ func extractUploadedFile(r *http.Request, imei string) (io.Reader, string, error
 // phase: it only logs the raw body, without assuming its format yet.
 func (b *Bridge) handleFilelist(w http.ResponseWriter, r *http.Request) {
 	imei := r.PathValue("imei")
+	if !b.gt06.HasActiveSession(imei) {
+		log.Printf("alarmclip: filelist from %s rejected -- no live authenticated GT06 session for this IMEI", imei)
+		http.Error(w, "no active session for this device", http.StatusUnauthorized)
+		return
+	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, 64*1024))
 	if err != nil {
 		http.Error(w, "error reading body", http.StatusBadRequest)

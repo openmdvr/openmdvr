@@ -96,10 +96,13 @@ class ServerParams(BaseModel):
 
 
 class ApnParams(BaseModel):
-    name: str = Field(..., min_length=1, max_length=40)
-    apn: str = Field(..., min_length=1, max_length=40)
-    user: str = Field("", max_length=40)
-    password: str = Field("", max_length=40)
+    # pattern blocks '#' and ',' -- GT06 uses '#' as command terminator and
+    # ',' as field separator; either character in any field truncates or
+    # injects subsequent commands on the wire.
+    name: str = Field(..., min_length=1, max_length=40, pattern=r"^[^#,]*$")
+    apn: str = Field(..., min_length=1, max_length=40, pattern=r"^[^#,]*$")
+    user: str = Field("", max_length=40, pattern=r"^[^#,]*$")
+    password: str = Field("", max_length=40, pattern=r"^[^#,]*$")
 
 
 class UploadUrlParams(BaseModel):
