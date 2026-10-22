@@ -94,7 +94,103 @@ Possible next steps, not yet implemented: batching several positions per
 transaction in the device server, and moving geofence evaluation for very
 large fleets out of the insert path.
 
-## Media nodes (video)
+## Multiple device servers (horizontal scaling)
+
+A single device server on 2 vCPU handles 50,000 trackers. Beyond that, or
+for redundancy, you can run several device-server instances behind a TCP
+load balancer. The platform is designed to make this straightforward because
+PostgreSQL is the only shared state.
+
+### What already scales without changes
+
+**API replicas** are already stateless in the right way. Every API process
+runs a `LISTEN` loop on the same PostgreSQL notification channels
+(`gps_positions`, `alarms`, etc.). When the device server writes a position
+or alarm, `pg_notify` wakes every API replica simultaneously; each one
+pushes the event to whichever SSE clients are connected to it. Start as many
+API replicas as needed — nginx round-robins browser requests across them and
+they self-coordinate through the database.
+
+**ZLMediaKit** scales as a pool; see the [Media nodes](#media-nodes-video)
+section below.
+
+### What the device server needs for multi-instance
+
+Each device-server process keeps an in-memory map of `IMEI → TCP connection`.
+Only the node that holds a device's connection can send it a command (engine
+cut/restore, photo request, etc.). Two mechanisms close this gap:
+
+**1 — TCP load balancing with source-IP hashing**
+
+Use `ip_hash` (nginx stream) or `balance source` (HAProxy) so that a given
+device's IP address is always sent to the same device-server node. Because
+4G modems keep the same carrier IP for the lifetime of a session, this is
+sticky enough in practice. When a device reconnects after a carrier IP
+change it may land on a different node, which is fine — it re-registers
+there.
+
+```nginx
+# nginx stream block
+stream {
+  upstream device_servers {
+    hash $remote_addr consistent;
+    server device-server-a:5023;
+    server device-server-b:5023;
+    # JT808
+    server device-server-a:5080;
+    server device-server-b:5080;
+  }
+  server { listen 5023; proxy_pass device_servers; }
+  server { listen 5080; proxy_pass device_servers; }
+}
+```
+
+**2 — Command routing via PostgreSQL LISTEN/NOTIFY**
+
+*Not yet implemented — this is the planned path.*
+
+The direct HTTP call from the API to the device server (`POST /commands`)
+works for a single instance. For multiple instances the API needs to know
+which node holds the target device, and that node needs to receive the
+command.
+
+The approach adds one table and replaces the direct HTTP call with a
+database-mediated fan-out — the same mechanism already used for SSE:
+
+```sql
+-- Which node currently holds each device's TCP connection.
+-- Inserted on login, deleted on disconnect, heartbeat-updated.
+CREATE TABLE device_nodes (
+  device_id  UUID PRIMARY KEY REFERENCES devices(id),
+  node_id    TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+Command flow:
+1. API writes the command row to `commands` (durable).
+2. API reads `device_nodes` to find `node_id` for that device.
+3. API calls `pg_notify('cmd_<node_id>', '{"command_id":"…"}')`.
+4. Each device-server listens on `cmd_<its own node_id>`.
+5. The right node wakes up, fetches the command row, sends it over the TCP
+   connection.
+
+If the NOTIFY is missed (node restart, reconnect window), the device-server
+polls `commands WHERE status = 'pending' AND device_id IN (my connected devices)`
+on startup and periodically — so no command is silently lost.
+
+### State that is per-process (not shared)
+
+| State | Where | Notes |
+|---|---|---|
+| IMEI / terminal-ID → TCP conn | in-memory registry | per node; cleaned up on disconnect |
+| Outgoing message sequence counter | per-session struct | reset on reconnect; harmless |
+| GPS quality-filter state | per-session struct | resets on reconnect; first point after reconnect may be dropped |
+| Active stream registry | in-memory map | moving to `active_streams` table closes this gap |
+| SSE client queues | API in-memory | per replica; refilled by `pg_notify` on reconnect |
+| SSE auth tickets (30 s TTL) | in-memory ticket store | a viewer that lands on a different replica re-fetches a ticket; self-correcting |
+
+### Media nodes (video)
 
 Video is a different budget from telemetry and scales on a different axis.
 Playback fan-out to browsers, audio transcoding and RTMP ingest from push
