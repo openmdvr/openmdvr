@@ -9,10 +9,10 @@ camera family plugs in without touching the others.
 
 | Family | Transport | Status |
 |---|---|---|
-| **JT/T 808-2019** (MDVRs, many dashcams) | TCP | Registration/auth, heartbeat, location (0x0200) incl. ACC & status bits, basic alarms (incl. ADAS/DSM flags as bits) |
-| **JT/T 1078-2016** (live video for JT808 devices) | TCP → RTP → ZLMediaKit | Live video per channel (0x9101/0x9102); bridge does H.264 reassembly + RFC 6184 FU-A fragmentation |
-| **GT06 / Concox family** (low-cost trackers, Jimi dashcams) | TCP | Login, heartbeat with ignition/relay state, position and alarm (both 0x22/0x26 and 0x12/0x16 numbering), command replies (0x15/0x21), engine stop/resume, camera event reports (0x95) |
-| **RTMP push** (Jimi JC261 / JC400 dashcams) | RTMP → ZLMediaKit | Live video for two cameras (front/cabin) started via GT06 text command, authorized in `on_publish`; native photo capture; event clip upload over HTTP |
+| **GT06 / Concox family** (low-cost trackers, Jimi dashcams) | TCP | Login, heartbeat with ignition/relay state, position and alarm (both 0x22/0x26 and 0x12/0x16 numbering), command replies (0x15/0x21), engine stop/resume, camera event reports (0x95) — **validated on hardware** |
+| **RTMP push** (Jimi JC261 / JC400 dashcams) | RTMP → ZLMediaKit | Live video for two cameras (front/cabin) started via GT06 text command, authorized in `on_publish`; native photo capture; event clip upload over HTTP — **validated on hardware** |
+| **JT/T 808-2019** (MDVRs and JT808 dashcams) | TCP | Registration/auth, heartbeat, location (0x0200) incl. ACC & status bits, basic alarms (incl. ADAS/DSM flags as bits) — **simulator-tested; not yet validated on physical hardware** |
+| **JT/T 1078-2016** (live video for JT808 devices) | TCP → RTP → ZLMediaKit | Live video per channel (0x9101/0x9102); bridge does H.264 reassembly + RFC 6184 FU-A fragmentation — **simulator-tested; not yet validated on physical hardware** |
 | **Browser delivery** | WebRTC (default), HTTP-FLV | Low-latency playback **with audio** (AAC → Opus transcoding in a pinned ZLMediaKit build) |
 
 ## Not yet supported (good contribution targets)

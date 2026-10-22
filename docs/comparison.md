@@ -17,7 +17,7 @@ explains where the two approaches differ.
 |---|---|---|
 | Starting point | Location reports from trackers | Video, evidence and isolation, with GPS in the same core |
 | Live video | Added later, when present; often HLS with seconds of delay and no audio | WebRTC with low latency and audio, front and cabin cameras |
-| Camera families | Usually one streaming model | Pull (JT/T 1078 MDVRs) and push (RTMP dashcams) behind one interface |
+| Camera families | Usually one streaming model | Push (RTMP dashcams, validated) and pull (JT/T 1078, simulator-tested) behind one interface |
 | Evidence | Video and alarms live side by side | Clips retrieved automatically per alarm, matched by device timestamp, quarantined on mismatch |
 | Stream access | Protected by the application session | One-time tickets checked by the media server before the first byte |
 | Tenant isolation | Users, groups and permissions in application code | PostgreSQL Row Level Security, forced on every business table |
@@ -34,11 +34,12 @@ access control that ends at the web session.
 In OpenMDVR, video is a subsystem with its own contract,
 `videobridge.Protocol`. Two device families implement it today:
 
-- **JT/T 1078 MDVRs.** The platform asks the device to stream, and a Go
-  bridge translates JT1078 packets into RTP for the media server.
 - **RTMP dashcams** such as the Jimi JC261/JC400. The device pushes its
   stream, and every publish is authorized in the media server's
-  `on_publish` hook.
+  `on_publish` hook. Validated on hardware.
+- **JT/T 1078 MDVRs.** The platform asks the device to stream, and a Go
+  bridge translates JT1078 packets into RTP for the media server.
+  Simulator-tested; not yet validated on a physical MDVR.
 
 Playback runs over WebRTC, so live video arrives in well under a second.
 Camera audio is transcoded to Opus only while someone is watching, so an

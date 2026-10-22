@@ -32,8 +32,8 @@ video are sensitive supply-chain data, and carriers should be able to keep
 them on infrastructure they control.
 
 OpenMDVR is a platform you can audit, run on your own servers and harden.
-It handles MDVRs, dashcams and GPS trackers in one system, and it was
-designed around two things most fleet software treats as afterthoughts:
+It handles 4G dashcams, GPS trackers and JT808 devices in one system, and
+it was designed around two things most fleet software treats as afterthoughts:
 video as evidence, and security that does not depend on every line of
 application code being correct.
 
@@ -49,10 +49,11 @@ OpenMDVR starts from the other end.
 
 **Video is a first-class subsystem, not a plugin.**
 Live video plays in the browser over WebRTC with low latency and with
-audio, which is transcoded on the fly only while someone is watching. Both
-device families are supported: JT/T 1078 MDVRs, where the platform asks the
-device to stream, and RTMP dashcams such as the Jimi JC261/JC400, where the
-device pushes. Front and cabin cameras are handled independently. A native
+audio, which is transcoded on the fly only while someone is watching. The
+primary target is 4G dashcams that push an RTMP stream (such as the Jimi
+JC261/JC400), where the device handles the connection and the platform
+authorizes it. JT/T 1078 MDVRs that receive a pull command are also
+supported. Front and cabin cameras are handled independently. A native
 photo preview is shown before anyone opens a live stream, so a glance at a
 camera costs kilobytes instead of minutes of cellular video.
 
@@ -101,20 +102,22 @@ never drove. Every corrected point keeps the original reading.
 Capabilities depend on the device. Telemetry and the whole dashboard are
 common to all; video and commands depend on what the hardware exposes.
 
-| Capability | MDVR — JT/T 808 + 1078 | GPS tracker — GT06 | Dashcam — GT06 + RTMP (JC261/JC400) |
+| Capability | Dashcam — GT06 + RTMP (JC261/JC400) | GPS tracker — GT06 | MDVR — JT/T 808 + 1078 ¹ |
 |---|---|---|---|
 | GPS, alarms, geofences, reports | yes | yes | yes |
 | Live video (WebRTC) | yes | — (no camera) | yes |
-| Photo preview / snapshot | live frame | — | yes (native photo) |
-| Recorded clip for an event | roadmap | — | yes (automatic) |
-| Remote engine stop / resume | — | yes | yes |
-| Configuration commands | — | yes | yes |
+| Photo preview / snapshot | yes (native photo) | — | live frame |
+| Recorded clip for an event | yes (automatic) | — | roadmap |
+| Remote engine stop / resume | yes | yes | — |
+| Configuration commands | yes | yes | — |
+
+¹ JT/T 808/1078 support is exercised with the simulators in
+[device-server/testclient](device-server/testclient); it has not yet been
+validated against a physical MDVR.
 
 Verified against real hardware: a CY06-2G tracker (GT06) and a Jimi JC261
-dashcam (GT06 + RTMP). JT/T 808/1078 MDVR support is exercised with the
-simulators in [device-server/testclient](device-server/testclient); it has
-not yet been validated against a physical MDVR. Per-protocol detail and what
-is deferred are in [docs/protocols.md](docs/protocols.md).
+dashcam (GT06 + RTMP). Per-protocol detail and what is deferred are in
+[docs/protocols.md](docs/protocols.md).
 
 ## Who it is for
 
@@ -166,8 +169,9 @@ Spanish; an English UI is on the roadmap
 - Vehicles, drivers, shifts, routes, and reports for distance and engine hours
 - Scoped read-only or read-write API keys with usage auditing
 - Usage metering, quotas and an optional billing module
-- Devices: JT/T 808-2019 with JT/T 1078-2016 video, the GT06 tracker family,
-  and RTMP dashcams of the Jimi JC261/JC400 family
+- Devices: GT06 tracker family and RTMP dashcams of the Jimi JC261/JC400
+  family (validated on hardware); JT/T 808-2019 with JT/T 1078-2016 video
+  (simulator-tested, not yet validated on a physical device)
 
 ## Scale
 
@@ -219,8 +223,8 @@ the device simulators in [device-server/testclient](device-server/testclient).
 ## Architecture
 
 ```
- MDVR, dashcam, tracker ──TCP──▶ device server (Go) ──▶ PostgreSQL + TimescaleDB (RLS)
- JT808 · JT1078 · GT06 · RTMP         │                        ▲
+ Dashcam, tracker, MDVR ──TCP──▶ device server (Go) ──▶ PostgreSQL + TimescaleDB (RLS)
+ GT06 · RTMP · JT808 · JT1078         │                        ▲
                                       ▼                        │
                                 ZLMediaKit ──WebRTC──▶ Browser ◀── API (FastAPI) ── SSE
 ```
