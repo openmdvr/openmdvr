@@ -96,13 +96,17 @@ class ServerParams(BaseModel):
 
 
 class ApnParams(BaseModel):
-    # pattern blocks '#' and ',' -- GT06 uses '#' as command terminator and
-    # ',' as field separator; either character in any field truncates or
-    # injects subsequent commands on the wire.
-    name: str = Field(..., min_length=1, max_length=40, pattern=r"^[^#,]*$")
-    apn: str = Field(..., min_length=1, max_length=40, pattern=r"^[^#,]*$")
-    user: str = Field("", max_length=40, pattern=r"^[^#,]*$")
-    password: str = Field("", max_length=40, pattern=r"^[^#,]*$")
+    # Whitelists rather than blocklists: each pattern defines exactly the
+    # characters that belong in that field, which closes unknown delimiters
+    # automatically rather than only blocking '#' and ','.
+    # name  — human label, spaces allowed; no wire delimiters.
+    # apn   — RFC-style dotted identifier; no spaces or specials.
+    # user  — credential, '@' and '+' for email-style usernames.
+    # password — broader set; '#' and ',' (GT06 delimiters) are not in it.
+    name: str = Field(..., min_length=1, max_length=40, pattern=r"^[A-Za-z0-9 ._\-]*$")
+    apn: str = Field(..., min_length=1, max_length=40, pattern=r"^[A-Za-z0-9._\-]*$")
+    user: str = Field("", max_length=40, pattern=r"^[A-Za-z0-9._@+\-]*$")
+    password: str = Field("", max_length=40, pattern=r"^[A-Za-z0-9._@!+%\-]*$")
 
 
 class UploadUrlParams(BaseModel):
