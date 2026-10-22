@@ -1,21 +1,12 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import i18next from "i18next";
 import mpegts from "mpegts.js";
 import type { AlarmVideoClip, DeviceProtocol } from "../lib/api";
 
-// Player for ONE camera of a RECORDED (not live) clip. Reuses mpegts.js in VOD
-// mode: the JC261 uploads clips as real .ts (MPEG-TS), not .mp4, for resilience
-// against interrupted uploads, and mpegts.js demuxes .ts natively (`type:
-// "mpegts"`). Unlike CameraTile (live: one-time tickets, auto-reconnect, tenant
-// time limits), this is a static file in R2 behind a short-lived signed URL --
-// none of that applies here.
-//
-// Layout: the container has its own max width (see AlarmClipPlayer below) so a
-// low-resolution dashcam clip is not stretched across a wide card, and loading
-// state is explicit text (same convention as CameraTile) instead of the
-// browser's native spinner. The <video> is always in the DOM (mpegts.js needs to
-// attach to it) but stays at opacity-0 until the real `loadeddata` event.
 function ClipVideo({ url, label }: { url: string; label?: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const { t } = useTranslation();
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
@@ -25,11 +16,11 @@ function ClipVideo({ url, label }: { url: string; label?: string }) {
     const videoEl = videoRef.current;
     if (!videoEl) return;
     if (!mpegts.isSupported()) {
-      setError("Este navegador no soporta reproducir este clip (Media Source Extensions)");
+      setError(t("clips.no_mse"));
       return;
     }
     const player = mpegts.createPlayer({ type: "mpegts", url, isLive: false });
-    player.on(mpegts.Events.ERROR, () => setError("no se pudo reproducir el clip -- puede haber expirado"));
+    player.on(mpegts.Events.ERROR, () => setError(t("clips.error_expired")));
     const onReady = () => setReady(true);
     videoEl.addEventListener("loadeddata", onReady);
     player.attachMediaElement(videoEl);
@@ -53,7 +44,7 @@ function ClipVideo({ url, label }: { url: string; label?: string }) {
           <>
             {!ready && (
               <p className="absolute inset-0 flex items-center justify-center text-xs text-ink-faint">
-                Cargando clip...
+                {t("clips.loading")}
               </p>
             )}
             <video
@@ -69,15 +60,13 @@ function ClipVideo({ url, label }: { url: string; label?: string }) {
   );
 }
 
-// AlarmClipPlayer: one or two cameras (Front + Cabin) side by side on desktop,
-// stacked on mobile. Has its own max width (max-w-lg for one camera, max-w-2xl
-// for two) and never inherits the full width of its parent container.
 export function AlarmClipPlayer({ url, secondaryUrl }: { url: string; secondaryUrl?: string | null }) {
+  const { t } = useTranslation();
   if (secondaryUrl) {
     return (
       <div className="grid max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2">
-        <ClipVideo url={url} label="Frontal" />
-        <ClipVideo url={secondaryUrl} label="Cabina" />
+        <ClipVideo url={url} label={t("clips.camera_front")} />
+        <ClipVideo url={secondaryUrl} label={t("clips.camera_cabin")} />
       </div>
     );
   }
@@ -88,19 +77,16 @@ export function AlarmClipPlayer({ url, secondaryUrl }: { url: string; secondaryU
   );
 }
 
-// The only protocol with clip retrieval implemented today. JT808 is designed but
-// not implemented, and "gt06" (GPS-only) has no camera.
 export const CLIP_SUPPORTED_PROTOCOL: DeviceProtocol = "gt06_video";
 
-// Alarm types for which the device actually stores video on its SD card:
-// JC261/JC400 camera events (collision, panic/SOS...). Ignition, engine cut,
-// geofence or speed alarms never have a file, so offering "request clip" there
-// would always end in "the device did not upload the file in time". Same list as
-// CLIP_CAPABLE_ALARM_TYPES in api/app/routers/alarms.py.
 export const CLIP_CAPABLE_ALARM_TYPES: ReadonlySet<string> = new Set(["gt06_camera_event"]);
 
 export function alarmCanHaveClip(protocol: DeviceProtocol | undefined, alarmType: string | null | undefined): boolean {
   return protocol === CLIP_SUPPORTED_PROTOCOL && !!alarmType && CLIP_CAPABLE_ALARM_TYPES.has(alarmType);
+}
+
+export function clipStatusLabel(status: AlarmVideoClip["status"]): string {
+  return i18next.t(`clips.status_${status}`, { defaultValue: status });
 }
 
 export const CLIP_STATUS_LABEL: Record<AlarmVideoClip["status"], string> = {

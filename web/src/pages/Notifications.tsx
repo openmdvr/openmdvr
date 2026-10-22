@@ -1,38 +1,34 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useNotifications } from "../lib/useNotifications";
 import { useAuth } from "../lib/auth";
 import { DeviceHealthPanel } from "../components/DeviceHealthPanel";
 import { api, ApiError, type AlarmSeverity, type AlarmVideoClip, type DeviceProtocol, type Notification } from "../lib/api";
 import { Alert, Button, Card, EmptyState, PageContainer, PageHeader } from "../components/ui";
-import { AlarmClipPlayer, CLIP_STATUS_LABEL, alarmCanHaveClip } from "../components/AlarmClipPlayer";
+import { AlarmClipPlayer, clipStatusLabel, alarmCanHaveClip } from "../components/AlarmClipPlayer";
 import { alarmTypeFromNotificationTitle, notificationTitleLabel } from "../lib/alarmLabels";
 
-// In-app mailbox -- a regular page with a nav badge, NOT a dropdown/floating
-// menu (the project avoids that class of overlay on purpose). This is the ONLY
-// surface for viewing alarms -- "mark read" also acknowledges the underlying
-// alarm on the backend (see notifications.py), one button does both. Severity
-// labels are localized instead of showing the raw value ("warning").
-const SEVERITY_LABEL: Record<AlarmSeverity, string> = { critical: "Crítica", warning: "Advertencia", info: "Info" };
 const SEVERITY_COLOR: Record<AlarmSeverity, string> = { critical: "#f43f5e", warning: "#f5b83d", info: "#2f93ff" };
 
 type ListFilter = "all" | "unread" | "critical";
-
-function relativeTime(iso: string): string {
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 1) return "recién";
-  if (minutes < 60) return `hace ${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `hace ${hours} h`;
-  const days = Math.floor(hours / 24);
-  return `hace ${days} d`;
-}
 
 export default function Notifications() {
   const { notifications, unreadCount, connectionState, markRead } = useNotifications();
   const { isPlatform } = useAuth();
   const navigate = useNavigate();
+  const { t } = useTranslation();
+
+  function relativeTime(iso: string): string {
+    const diffMs = Date.now() - new Date(iso).getTime();
+    const minutes = Math.floor(diffMs / 60_000);
+    if (minutes < 1) return t("notifications.just_now");
+    if (minutes < 60) return t("notifications.minutes_ago", { count: minutes });
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return t("notifications.hours_ago", { count: hours });
+    const days = Math.floor(hours / 24);
+    return t("notifications.days_ago", { count: days });
+  }
 
   // ?device_id= -- target of the "view all" link in DeviceDetailPanel.tsx's
   // alarm preview. When filtered, this screen stops depending on the global
@@ -57,7 +53,7 @@ export default function Notifications() {
         if (!cancelled) setFilteredItems(page.items);
       })
       .catch((err) => {
-        if (!cancelled) setFilteredError(err instanceof ApiError ? err.message : "error cargando notificaciones");
+        if (!cancelled) setFilteredError(err instanceof ApiError ? err.message : t("notifications.error_loading"));
       });
     return () => {
       cancelled = true;
@@ -154,7 +150,7 @@ export default function Notifications() {
   useEffect(() => {
     const pending = Object.values(clips).filter((c) => c.status === "requested" || c.status === "uploading");
     if (pending.length === 0) return;
-    const t = setInterval(async () => {
+    const pollInterval = setInterval(async () => {
       const updated = await Promise.all(pending.map(async (c) => [c.alarm_id, await api.getAlarmClip(c.alarm_id)] as const));
       setClips((prev) => {
         const next = { ...prev };
@@ -162,7 +158,7 @@ export default function Notifications() {
         return next;
       });
     }, 4000);
-    return () => clearInterval(t);
+    return () => clearInterval(pollInterval);
   }, [clips]);
 
   async function requestClip(alarmId: string) {
@@ -172,7 +168,7 @@ export default function Notifications() {
       setClips((prev) => ({ ...prev, [alarmId]: clip }));
       setClipError(null);
     } catch (err) {
-      setClipError(err instanceof ApiError ? err.message : "error pidiendo el clip");
+      setClipError(err instanceof ApiError ? err.message : t("notifications.error_requesting_clip"));
     } finally {
       setClipBusyId(null);
     }
@@ -181,20 +177,20 @@ export default function Notifications() {
   return (
     <PageContainer>
       <PageHeader
-        title="Notificaciones"
+        title={t("notifications.title")}
         description={
           deviceFilterId
-            ? `Solo ${deviceFilterLabel ?? "esta unidad"} — ${unreadDisplay} sin leer`
+            ? t("notifications.device_filter_description", { label: deviceFilterLabel ?? t("notifications.device_filter_unit"), count: unreadDisplay })
             : connectionState === "open"
-              ? `${unreadDisplay} sin leer`
+              ? t("notifications.filter_unread") + ` · ${unreadDisplay}`
               : connectionState === "reconnecting"
-                ? "Reconectando..."
-                : "Conectando..."
+                ? t("notifications.reconnecting")
+                : t("notifications.connecting")
         }
         action={
           deviceFilterId ? (
             <Button variant="secondary" onClick={() => setSearchParams({})}>
-              Quitar filtro de unidad
+              {t("notifications.remove_device_filter")}
             </Button>
           ) : undefined
         }
@@ -206,9 +202,9 @@ export default function Notifications() {
       <div className="flex gap-1.5">
         {(
           [
-            ["all", "Todas"],
-            ["unread", `Sin leer${unreadDisplay ? ` · ${unreadDisplay}` : ""}`],
-            ["critical", "Críticas"],
+            ["all", t("notifications.filter_all")],
+            ["unread", `${t("notifications.filter_unread")}${unreadDisplay ? ` · ${unreadDisplay}` : ""}`],
+            ["critical", t("notifications.filter_critical")],
           ] as const
         ).map(([key, label]) => (
           <button
@@ -228,7 +224,7 @@ export default function Notifications() {
 
       <Card className="p-2 sm:p-2">
         {items.length === 0 ? (
-          <EmptyState>{listFilter === "all" ? "Sin notificaciones todavía." : "Nada en este filtro."}</EmptyState>
+          <EmptyState>{listFilter === "all" ? t("notifications.empty") : t("notifications.empty_filtered")}</EmptyState>
         ) : (
           <ul className="space-y-1">
             {items.map((n) => {
@@ -253,11 +249,11 @@ export default function Notifications() {
                         <p className={`text-sm leading-snug ${n.read_at ? "font-medium text-ink-dim" : "font-semibold text-ink"}`}>
                           {notificationTitleLabel(n.title)}
                         </p>
-                        {!n.read_at && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-brand-500" aria-label="sin leer" />}
+                        {!n.read_at && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-brand-500" aria-label={t("notifications.unread_aria")} />}
                       </div>
                       {n.body && <p className="mt-0.5 text-sm text-ink-dim">{n.body}</p>}
                       <p className="mt-1 text-xs text-ink-faint">
-                        {n.severity && <span style={{ color }}>{SEVERITY_LABEL[n.severity]}</span>}
+                        {n.severity && <span style={{ color }}>{t(`severity_short.${n.severity}`)}</span>}
                         {n.severity && " · "}
                         {relativeTime(n.created_at)}
                       </p>
@@ -272,25 +268,22 @@ export default function Notifications() {
                               navigate(`/map?device=${n.device_id}`);
                             }}
                           >
-                            Ver en el mapa
+                            {t("notifications.view_on_map")}
                           </Button>
                         )}
                         {!n.read_at && (
                           <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => handleMarkRead(n.id)}>
-                            Marcar leída
+                            {t("notifications.mark_read")}
                           </Button>
                         )}
                         {clipsSupported && n.alarm_id && (!clip || clip.status === "failed") && (
-                          // Offer a retry on 'failed' (the button must not
-                          // disappear forever after a failure); 'unsupported'
-                          // offers no retry (device protocol limitation).
                           <Button
                             variant="ghost"
                             className="px-3 py-1.5 text-xs"
                             disabled={clipBusyId === n.alarm_id}
                             onClick={() => requestClip(n.alarm_id!)}
                           >
-                            {clip ? "Reintentar clip" : "Pedir clip (~1 min)"}
+                            {clip ? t("notifications.retry_clip") : t("notifications.request_clip")}
                           </Button>
                         )}
                         {clip && clip.status === "ready" && clip.url && (
@@ -299,16 +292,16 @@ export default function Notifications() {
                             className="px-3 py-1.5 text-xs"
                             onClick={() => setOpenClipId((cur) => (cur === n.alarm_id ? null : n.alarm_id!))}
                           >
-                            {openClipId === n.alarm_id ? "Ocultar clip" : "Ver clip"}
+                            {openClipId === n.alarm_id ? t("notifications.hide_clip") : t("notifications.view_clip")}
                           </Button>
                         )}
                         {clip && (clip.status === "requested" || clip.status === "uploading") && (
-                          <span className="text-xs text-ink-faint">{CLIP_STATUS_LABEL[clip.status]}</span>
+                          <span className="text-xs text-ink-faint">{clipStatusLabel(clip.status)}</span>
                         )}
-                        {clip && clip.status === "ready" && !clip.url && <span className="text-xs text-ink-faint">Este clip ya no está disponible</span>}
+                        {clip && clip.status === "ready" && !clip.url && <span className="text-xs text-ink-faint">{t("notifications.clip_unavailable")}</span>}
                       </div>
                       {clip && (clip.status === "failed" || clip.status === "unsupported") && (
-                        <p className="mt-1.5 text-xs text-rose-300">{clip.error_detail ?? CLIP_STATUS_LABEL[clip.status]}</p>
+                        <p className="mt-1.5 text-xs text-rose-300">{clip.error_detail ?? clipStatusLabel(clip.status)}</p>
                       )}
                       {clip && clip.status === "ready" && clip.url && openClipId === n.alarm_id && (
                         <div className="mt-2.5">

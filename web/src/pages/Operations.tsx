@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import {
   api,
   ApiError,
@@ -27,21 +28,6 @@ import {
 } from "../components/ui";
 import { todayLocalIso } from "../lib/localDate";
 
-// Live operations panel -- what a tenant admin needs to run day-to-day
-// operations without checking table by table in Administration: who is on shift
-// now, routes, and recent policy alerts. Everything reuses existing
-// endpoints/RLS (the usual require_non_driver), no new security surface.
-//
-// Routes live HERE rather than in Administration: creating/assigning a route is
-// day-to-day operational work, not configuration.
-
-const EVENT_LABEL: Record<ShiftEventType, string> = {
-  clock_in: "En turno",
-  clock_out: "Fuera de turno",
-  meal_start: "Comiendo",
-  meal_end: "En turno",
-};
-
 const EVENT_TONE: Record<ShiftEventType, BadgeTone> = {
   clock_in: "success",
   clock_out: "muted",
@@ -51,11 +37,7 @@ const EVENT_TONE: Record<ShiftEventType, BadgeTone> = {
 
 export default function Operations() {
   const { tenantId, isPlatform, role } = useAuth();
-  // Creating/editing routes is require_tenant_admin in the backend (platform
-  // bypass included). For a tenant_admin session the tenant is already fixed (no
-  // ambiguity); for the platform this page has no single tenant --
-  // RouteCreateForm gets its own picker (visible ONLY to the platform, see
-  // tenants below) instead of hiding the capability entirely.
+  const { t } = useTranslation();
   const canManageRoutes = isPlatform || role === "tenant_admin";
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
@@ -84,8 +66,8 @@ export default function Operations() {
   return (
     <PageContainer>
       <PageHeader
-        title="Operación"
-        description="Estado de turno de cada chofer, rutas y alertas recientes de política."
+        title={t("operations.title")}
+        description={t("operations.description")}
       />
       <div className="space-y-6">
         <ShiftStatusSection />
@@ -105,20 +87,25 @@ export default function Operations() {
 function ShiftStatusSection() {
   const [rows, setRows] = useState<DriverShiftStatus[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const { t } = useTranslation();
 
   useEffect(() => {
     api
       .listDriverShiftStatus()
       .then(setRows)
-      .catch((err) => setError(err instanceof ApiError ? err.message : "error cargando estado de turno"));
+      .catch((err) => setError(err instanceof ApiError ? err.message : t("operations.error_loading_status")));
   }, []);
+
+  function eventLabel(type: ShiftEventType): string {
+    return t(`operations.event_${type}`);
+  }
 
   return (
     <Card>
-      <CardTitle>En turno ahora</CardTitle>
+      <CardTitle>{t("operations.drivers_on_shift")}</CardTitle>
       {error && <Alert>{error}</Alert>}
       {rows.length === 0 ? (
-        <EmptyState>Sin choferes dados de alta todavía.</EmptyState>
+        <EmptyState>{t("operations.no_drivers")}</EmptyState>
       ) : (
         <ul className="divide-y divide-line">
           {rows.map((r) => (
@@ -126,7 +113,7 @@ function ShiftStatusSection() {
               <span className="text-sm font-medium text-ink">{r.driver_name}</span>
               <div className="text-right">
                 <Badge tone={r.last_event_type ? EVENT_TONE[r.last_event_type] : "neutral"}>
-                  {r.last_event_type ? EVENT_LABEL[r.last_event_type] : "Sin registrar"}
+                  {r.last_event_type ? eventLabel(r.last_event_type) : t("operations.not_registered")}
                 </Badge>
                 {r.last_event_at && (
                   <p className="mt-0.5 text-xs text-ink-faint">{new Date(r.last_event_at).toLocaleString()}</p>
@@ -143,7 +130,7 @@ function ShiftStatusSection() {
                     to={`/map?lat=${r.last_lat}&lon=${r.last_lon}&label=${encodeURIComponent(r.driver_name)}`}
                     className="mt-0.5 block text-xs text-brand-600 hover:underline"
                   >
-                    Ver en el mapa
+                    {t("notifications.view_on_map")}
                   </Link>
                 )}
               </div>
@@ -160,12 +147,13 @@ function ShiftAlertsSection() {
   const [onlyUnacknowledged, setOnlyUnacknowledged] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const { t } = useTranslation();
 
   async function reload() {
     try {
       setAlerts((await api.listDriverShiftAlerts({ unacknowledged_only: onlyUnacknowledged, limit: 100 })).items);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "error cargando alertas");
+      setError(err instanceof ApiError ? err.message : t("operations.error_loading_alerts"));
     }
   }
 
@@ -180,7 +168,7 @@ function ShiftAlertsSection() {
       await api.acknowledgeDriverShiftAlert(id);
       await reload();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "error reconociendo alerta");
+      setError(err instanceof ApiError ? err.message : t("operations.error_acknowledging"));
     } finally {
       setBusyId(null);
     }
@@ -191,16 +179,16 @@ function ShiftAlertsSection() {
       <CardTitle
         action={
           <Button variant="secondary" className="px-2 py-1 text-xs" onClick={() => setOnlyUnacknowledged((v) => !v)}>
-            {onlyUnacknowledged ? "Ver todas" : "Ver solo sin reconocer"}
+            {onlyUnacknowledged ? t("operations.view_all") : t("operations.view_unacknowledged_only")}
           </Button>
         }
       >
-        Alertas de choferes
+        {t("operations.driver_alerts")}
       </CardTitle>
       {error && <Alert>{error}</Alert>}
       {alerts.length === 0 ? (
         <EmptyState>
-          {onlyUnacknowledged ? "No hay alertas sin reconocer." : "Todavía no hay alertas registradas."}
+          {onlyUnacknowledged ? t("operations.no_unacknowledged_alerts") : t("operations.no_alerts")}
         </EmptyState>
       ) : (
         <ul className="divide-y divide-line">
@@ -209,17 +197,17 @@ function ShiftAlertsSection() {
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <Badge tone="warning">
-                    {a.alert_type === "meal_outside_window" ? "comida fuera de horario" : "turno excedido"}
+                    {a.alert_type === "meal_outside_window" ? t("operations.alert_meal_outside_window") : t("operations.alert_shift_exceeded")}
                   </Badge>
                   <span className="truncate text-sm font-medium text-ink">{a.driver_name}</span>
                 </div>
                 <p className="mt-0.5 text-xs text-ink-dim">{new Date(a.occurred_at).toLocaleString()}</p>
               </div>
               {a.acknowledged_at ? (
-                <Badge tone="muted">reconocida</Badge>
+                <Badge tone="muted">{t("operations.acknowledged")}</Badge>
               ) : (
                 <Button variant="secondary" disabled={busyId === a.id} onClick={() => acknowledge(a.id)}>
-                  Reconocer
+                  {t("operations.acknowledge")}
                 </Button>
               )}
             </li>
@@ -249,6 +237,7 @@ function RoutesSection({
   canManage: boolean;
   ownTenantId: string | null;
 }) {
+  const { t } = useTranslation();
   const [routes, setRoutes] = useState<Route[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -258,7 +247,7 @@ function RoutesSection({
     try {
       setRoutes((await api.listRoutes({ limit: 200, tenant_id: ownTenantId ?? undefined })).items);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "error cargando rutas");
+      setError(err instanceof ApiError ? err.message : t("operations.error_loading_routes"));
     }
   }
 
@@ -281,12 +270,12 @@ function RoutesSection({
         action={
           canManage && (
             <Button variant="secondary" className="px-2 py-1 text-xs" onClick={() => setShowCreate((v) => !v)}>
-              {showCreate ? "Cancelar" : "+ Nueva ruta"}
+              {showCreate ? t("operations.cancel") : t("operations.new_route")}
             </Button>
           )
         }
       >
-        Rutas
+        {t("operations.routes")}
       </CardTitle>
 
       {showCreate && canManage && (
@@ -307,18 +296,18 @@ function RoutesSection({
       {error && <Alert>{error}</Alert>}
 
       {routes.length === 0 ? (
-        <EmptyState>Sin rutas registradas todavía.</EmptyState>
+        <EmptyState>{t("operations.no_routes")}</EmptyState>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-line text-xs tracking-wide text-ink-faint uppercase">
-                <th className="py-1.5 pr-2 font-medium">Fecha</th>
-                <th className="py-1.5 pr-2 font-medium">Ruta</th>
-                {showTenantColumn && <th className="py-1.5 pr-2 font-medium">Tenant</th>}
-                <th className="py-1.5 pr-2 font-medium">Chofer</th>
-                <th className="py-1.5 pr-2 font-medium">Vehículo</th>
-                <th className="py-1.5 pr-2 font-medium">Estado</th>
+                <th className="py-1.5 pr-2 font-medium">{t("operations.col_date")}</th>
+                <th className="py-1.5 pr-2 font-medium">{t("operations.col_route")}</th>
+                {showTenantColumn && <th className="py-1.5 pr-2 font-medium">{t("operations.col_tenant")}</th>}
+                <th className="py-1.5 pr-2 font-medium">{t("operations.col_driver")}</th>
+                <th className="py-1.5 pr-2 font-medium">{t("operations.col_vehicle")}</th>
+                <th className="py-1.5 pr-2 font-medium">{t("operations.col_status")}</th>
                 {canManage && <th className="py-1.5 font-medium" />}
               </tr>
             </thead>
@@ -351,7 +340,7 @@ function RoutesSection({
                     {canManage && (
                       <td className="py-2">
                         <Button variant="ghost" onClick={() => setEditingId(r.id)} className="px-2 py-1 text-xs">
-                          Editar
+                          {t("operations.edit")}
                         </Button>
                       </td>
                     )}
@@ -379,6 +368,7 @@ function RouteCreateForm({
   ownTenantId: string | null;
   onCreated: () => void;
 }) {
+  const { t } = useTranslation();
   const [tenantId, setTenantId] = useState(ownTenantId ?? "");
   const [name, setName] = useState("");
   const [date, setDate] = useState(todayLocalIso());
@@ -407,7 +397,7 @@ function RouteCreateForm({
       setVehicleId("");
       onCreated();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "error creando ruta");
+      setError(err instanceof ApiError ? err.message : t("operations.error_creating_route"));
     } finally {
       setBusy(false);
     }
@@ -418,7 +408,7 @@ function RouteCreateForm({
       {!ownTenantId && (
         <Select required value={tenantId} onChange={(e) => setTenantId(e.target.value)} className="col-span-2 sm:col-span-1">
           <option value="" disabled>
-            Tenant...
+            {t("operations.tenant_placeholder")}
           </option>
           {tenants.map((t) => (
             <option key={t.id} value={t.id}>
@@ -428,7 +418,7 @@ function RouteCreateForm({
         </Select>
       )}
       <Input
-        placeholder="Nombre de la ruta"
+        placeholder={t("operations.route_name_placeholder")}
         required
         value={name}
         onChange={(e) => setName(e.target.value)}
@@ -436,7 +426,7 @@ function RouteCreateForm({
       />
       <Input type="date" required value={date} onChange={(e) => setDate(e.target.value)} />
       <Select value={driverId} onChange={(e) => setDriverId(e.target.value)}>
-        <option value="">Sin chofer</option>
+        <option value="">{t("operations.no_driver")}</option>
         {tenantDrivers.map((d) => (
           <option key={d.id} value={d.id}>
             {d.name}
@@ -444,7 +434,7 @@ function RouteCreateForm({
         ))}
       </Select>
       <Select value={vehicleId} onChange={(e) => setVehicleId(e.target.value)}>
-        <option value="">Sin vehículo</option>
+        <option value="">{t("operations.no_vehicle")}</option>
         {tenantVehicles.map((v) => (
           <option key={v.id} value={v.id}>
             {v.plate || v.id}
@@ -452,7 +442,7 @@ function RouteCreateForm({
         ))}
       </Select>
       <Button type="submit" disabled={busy} className="col-span-2 sm:col-span-5">
-        Crear ruta
+        {t("operations.create_route")}
       </Button>
       {error && (
         <div className="col-span-2 sm:col-span-5">
@@ -478,6 +468,7 @@ function RouteEditRow({
   onDone: () => void;
   onSaved: () => void;
 }) {
+  const { t } = useTranslation();
   const [driverId, setDriverId] = useState(route.driver_id ?? "");
   const [vehicleId, setVehicleId] = useState(route.vehicle_id ?? "");
   const [status, setStatus] = useState<Route["status"]>(route.status);
@@ -499,7 +490,7 @@ function RouteEditRow({
       onSaved();
       onDone();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "error guardando");
+      setError(err instanceof ApiError ? err.message : t("operations.error_saving"));
     } finally {
       setBusy(false);
     }
@@ -511,7 +502,7 @@ function RouteEditRow({
         <div className="space-y-2 border border-brand-600/30 bg-surface-2 p-3">
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             <Select value={driverId} onChange={(e) => setDriverId(e.target.value)}>
-              <option value="">Sin chofer</option>
+              <option value="">{t("operations.no_driver")}</option>
               {tenantDrivers.map((d) => (
                 <option key={d.id} value={d.id}>
                   {d.name}
@@ -519,7 +510,7 @@ function RouteEditRow({
               ))}
             </Select>
             <Select value={vehicleId} onChange={(e) => setVehicleId(e.target.value)}>
-              <option value="">Sin vehículo</option>
+              <option value="">{t("operations.no_vehicle")}</option>
               {tenantVehicles.map((v) => (
                 <option key={v.id} value={v.id}>
                   {v.plate || v.id}
@@ -536,10 +527,10 @@ function RouteEditRow({
           </div>
           <div className="flex items-center gap-2">
             <Button disabled={busy} onClick={save} className="px-3 py-1 text-xs">
-              Guardar
+              {t("operations.save")}
             </Button>
             <Button variant="secondary" onClick={onDone} className="px-3 py-1 text-xs">
-              Cancelar
+              {t("operations.cancel")}
             </Button>
             {error && <span className="text-xs text-red-300">{error}</span>}
           </div>

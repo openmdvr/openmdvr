@@ -1,19 +1,16 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { Eye, EyeOff, Lock, Mail, ShieldCheck, ArrowRight } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { ApiError } from "../lib/api";
 import { Alert } from "../components/ui";
 import { LoginHero } from "../components/LoginHero";
 
-// Login: split screen -- form in a glass card on the left, illustrated showcase
-// on the right (large screens only; on mobile the form takes the whole screen,
-// without distractions). Error messages: one generic message for invalid
-// credentials and another for any other error, never distinguishing field or
-// cause (same doctrine as auth.py).
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -28,9 +25,9 @@ export default function Login() {
       await login(email, password);
       navigate("/");
     } catch (err) {
-      if (!(err instanceof ApiError)) setError("No se pudo conectar con el servidor");
-      else if (err.status === 401) setError("Credenciales inválidas");
-      else setError("No se pudo iniciar sesión, intenta de nuevo");
+      if (!(err instanceof ApiError)) setError(t("login.error_server"));
+      else if (err.status === 401) setError(t("login.error_invalid"));
+      else setError(t("login.error_retry"));
     } finally {
       setLoading(false);
     }
@@ -52,12 +49,12 @@ export default function Login() {
 
           <main className="flex flex-1 items-center justify-center py-10">
             <form onSubmit={onSubmit} className="glass-card w-full max-w-[400px] rounded-[28px] p-7 sm:p-8" noValidate={false}>
-              <h1 className="text-2xl font-semibold tracking-tight text-ink sm:text-[28px]">Bienvenido</h1>
-              <p className="mt-1.5 text-sm text-ink-dim">Inicia sesión para ver tu flota en tiempo real.</p>
+              <h1 className="text-2xl font-semibold tracking-tight text-ink sm:text-[28px]">{t("login.title")}</h1>
+              <p className="mt-1.5 text-sm text-ink-dim">{t("login.subtitle")}</p>
 
               <div className="mt-7 space-y-4">
                 <label className="block">
-                  <span className="mb-1.5 block text-xs font-medium text-ink-dim">Correo electrónico</span>
+                  <span className="mb-1.5 block text-xs font-medium text-ink-dim">{t("login.email")}</span>
                   <span className={fieldWrap}>
                     <Mail size={17} strokeWidth={1.75} className="shrink-0 text-ink-faint group-focus-within:text-brand-400" aria-hidden />
                     <input
@@ -75,7 +72,7 @@ export default function Login() {
                 </label>
 
                 <label className="block">
-                  <span className="mb-1.5 block text-xs font-medium text-ink-dim">Contraseña</span>
+                  <span className="mb-1.5 block text-xs font-medium text-ink-dim">{t("login.password")}</span>
                   <span className={fieldWrap}>
                     <Lock size={17} strokeWidth={1.75} className="shrink-0 text-ink-faint group-focus-within:text-brand-400" aria-hidden />
                     <input
@@ -90,7 +87,7 @@ export default function Login() {
                     <button
                       type="button"
                       onClick={() => setShowPassword((v) => !v)}
-                      aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                      aria-label={showPassword ? t("login.hide_password") : t("login.show_password")}
                       aria-pressed={showPassword}
                       className="-mr-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-ink-faint hover:bg-fg/[0.06] hover:text-ink"
                     >
@@ -112,10 +109,10 @@ export default function Login() {
                 className="group mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-b from-brand-500 to-brand-600 text-[15px] font-semibold text-white shadow-[0_12px_30px_-10px_rgba(3,125,254,0.85),inset_0_1px_0_rgba(255,255,255,0.25)] transition-all hover:brightness-110 active:scale-[0.99] disabled:opacity-60"
               >
                 {loading ? (
-                  <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/40 border-t-white" aria-label="Entrando" />
+                  <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/40 border-t-white" aria-label={t("login.signing_in")} />
                 ) : (
                   <>
-                    Entrar
+                    {t("login.submit")}
                     <ArrowRight size={18} strokeWidth={2} className="transition-transform group-hover:translate-x-0.5" aria-hidden />
                   </>
                 )}
@@ -123,7 +120,7 @@ export default function Login() {
 
               <p className="mt-6 flex items-center justify-center gap-1.5 text-[11px] text-ink-faint">
                 <ShieldCheck size={14} strokeWidth={1.75} aria-hidden />
-                Conexión cifrada
+                {t("login.encrypted")}
               </p>
             </form>
           </main>

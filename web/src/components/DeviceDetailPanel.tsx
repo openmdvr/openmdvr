@@ -1,5 +1,6 @@
 import { formatQuota } from "../lib/duration";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import {
   api,
@@ -38,12 +39,6 @@ import { AlarmClipPlayer, CLIP_STATUS_LABEL, alarmCanHaveClip } from "./AlarmCli
 import { alarmTypeLabel } from "../lib/alarmLabels";
 import { useLiveBalance } from "../lib/liveUsage";
 
-const SEVERITY_LABEL: Record<AlarmSeverity, string> = {
-  critical: "Crítica",
-  warning: "Advertencia",
-  info: "Info",
-};
-
 const severityTone: Record<AlarmSeverity, BadgeTone> = {
   critical: "danger",
   warning: "warning",
@@ -62,7 +57,6 @@ const severityTone: Record<AlarmSeverity, BadgeTone> = {
 //
 // Tooltip copy is written for end users: one short sentence, no implementation
 // details, no repetition of the label.
-const IGNITION_TOOLTIP = "Si el motor está encendido o apagado.";
 
 // Preview of this unit's recent alarms. Reads /alarms for THIS unit -- the same
 // source that decides the map/list "has alarm" state, so the two never
@@ -92,6 +86,7 @@ function DeviceAlarmsPreview({
   // because it can be empty (platform accounts receive no notifications; a user
   // may have muted or read them), which would make the header and this section
   // contradict each other.
+  const { t } = useTranslation();
   const [items, setItems] = useState<Alarm[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -130,7 +125,7 @@ function DeviceAlarmsPreview({
         });
       }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "error cargando alarmas");
+      setError(err instanceof ApiError ? err.message : t("device_detail.error_loading_alarms"));
     }
   }
 
@@ -138,9 +133,9 @@ function DeviceAlarmsPreview({
     reload();
     // Same cadence as the map state (useUnacknowledgedAlarms) so the header and
     // this list never disagree for long.
-    const t = setInterval(reload, 15_000);
+    const timer = setInterval(reload, 15_000);
     return () => {
-      clearInterval(t);
+      clearInterval(timer);
       onActiveRef.current?.(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -152,7 +147,7 @@ function DeviceAlarmsPreview({
   useEffect(() => {
     const pendingClips = Object.values(clips).filter((c) => c.status === "requested" || c.status === "uploading");
     if (pendingClips.length === 0) return;
-    const t = setInterval(async () => {
+    const pollInterval = setInterval(async () => {
       const updated = await Promise.all(pendingClips.map(async (c) => [c.alarm_id, await api.getAlarmClip(c.alarm_id)] as const));
       setClips((prev) => {
         const next = { ...prev };
@@ -160,7 +155,7 @@ function DeviceAlarmsPreview({
         return next;
       });
     }, 4000);
-    return () => clearInterval(t);
+    return () => clearInterval(pollInterval);
   }, [clips]);
 
   async function acknowledge(id: string) {
@@ -169,7 +164,7 @@ function DeviceAlarmsPreview({
       await api.acknowledgeAlarm(id);
       await reload();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "error reconociendo alarma");
+      setError(err instanceof ApiError ? err.message : t("device_detail.error_acknowledging"));
     } finally {
       setBusyId(null);
     }
@@ -181,7 +176,7 @@ function DeviceAlarmsPreview({
       const clip = await api.requestAlarmClip(alarmId);
       setClips((prev) => ({ ...prev, [alarmId]: clip }));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "error pidiendo el clip");
+      setError(err instanceof ApiError ? err.message : t("device_detail.error_requesting_clip"));
     } finally {
       setClipBusyId(null);
     }
@@ -193,21 +188,21 @@ function DeviceAlarmsPreview({
 
   return (
     <CollapsibleSection
-      title="Alarmas recientes"
+      title={t("device_detail.alarms_title")}
       defaultOpen
-      badge={pendingCount > 0 ? <Badge tone="danger">{pendingCount} sin reconocer</Badge> : undefined}
+      badge={pendingCount > 0 ? <Badge tone="danger">{t("device_detail.unacknowledged_badge", { count: pendingCount })}</Badge> : undefined}
     >
       <div className="flex items-center justify-end text-xs">
         <Link
           to={`/notifications?device_id=${deviceId}&device_label=${encodeURIComponent(deviceLabel)}`}
           className="text-brand-500 hover:underline"
         >
-          Ver todas
+          {t("device_detail.view_all")}
         </Link>
       </div>
       {error && <p className="text-xs text-red-400">{error}</p>}
       {items.length === 0 ? (
-        <p className="text-ink-dim">Sin alarmas recientes.</p>
+        <p className="text-ink-dim">{t("device_detail.no_recent_alarms")}</p>
       ) : (
         <ul className="divide-y divide-line">
           {items.map((a) => {
@@ -217,16 +212,16 @@ function DeviceAlarmsPreview({
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
-                      <Badge tone={severityTone[a.severity]}>{SEVERITY_LABEL[a.severity]}</Badge>
+                      <Badge tone={severityTone[a.severity]}>{t(`severity_short.${a.severity}`)}</Badge>
                       <span className="truncate text-ink">{alarmTypeLabel(a.alarm_type)}</span>
                     </div>
                     <p className="text-[11px] text-ink-dim">{new Date(a.time).toLocaleString()}</p>
                   </div>
                   {a.acknowledged_at ? (
-                    <Badge tone="muted">reconocida</Badge>
+                    <Badge tone="muted">{t("device_detail.acknowledged")}</Badge>
                   ) : (
                     <Button variant="secondary" disabled={busyId === a.id} onClick={() => acknowledge(a.id)}>
-                      Reconocer
+                      {t("device_detail.acknowledge")}
                     </Button>
                   )}
                 </div>
@@ -239,7 +234,7 @@ function DeviceAlarmsPreview({
                      */}
                     {(!clip || clip.status === "failed") && (
                       <Button variant="secondary" disabled={clipBusyId === a.id} onClick={() => requestClip(a.id)}>
-                        {clip ? "Reintentar pedido de clip" : "Pedir clip de video (~1 min)"}
+                        {clip ? t("device_detail.retry_clip") : t("device_detail.request_clip_video")}
                       </Button>
                     )}
                     {clip && (clip.status === "requested" || clip.status === "uploading") && (
@@ -247,11 +242,11 @@ function DeviceAlarmsPreview({
                     )}
                     {clip && clip.status === "ready" && clip.url && (
                       <Button variant="secondary" onClick={() => setOpenClipId((cur) => (cur === a.id ? null : a.id))}>
-                        {openClipId === a.id ? "Ocultar clip" : "Ver clip"}
+                        {openClipId === a.id ? t("device_detail.hide_clip") : t("device_detail.view_clip")}
                       </Button>
                     )}
                     {clip && clip.status === "ready" && !clip.url && (
-                      <span className="text-ink-dim">este clip ya no está disponible</span>
+                      <span className="text-ink-dim">{t("device_detail.clip_unavailable")}</span>
                     )}
                     {clip && (clip.status === "failed" || clip.status === "unsupported") && (
                       <span className="text-red-400">{clip.error_detail ?? CLIP_STATUS_LABEL[clip.status]}</span>
@@ -269,19 +264,6 @@ function DeviceAlarmsPreview({
     </CollapsibleSection>
   );
 }
-
-const ENGINE_COMMAND_LABEL: Record<DeviceCommandType, string> = {
-  engine_stop: "Cortar motor",
-  engine_resume: "Reconectar motor",
-};
-
-const COMMAND_STATUS_LABEL: Record<DeviceCommand["status"], string> = {
-  pending: "en curso",
-  success: "éxito",
-  failed: "falló",
-  timeout: "sin respuesta",
-  device_offline: "sin conexión",
-};
 
 const COMMAND_STATUS_TONE: Record<DeviceCommand["status"], BadgeTone> = {
   pending: "brand",
@@ -306,6 +288,7 @@ const RESUME_CONFIRM_TIMEOUT_MS = 8000;
 // DeviceAlarmsPreview): its own fetch/state, independent of the rest of the
 // panel.
 function DeviceEngineControls({ deviceId, deviceLabel }: { deviceId: string; deviceLabel: string }) {
+  const { t } = useTranslation();
   const [history, setHistory] = useState<DeviceCommand[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -353,7 +336,7 @@ function DeviceEngineControls({ deviceId, deviceLabel }: { deviceId: string; dev
       await api.sendDeviceCommand(deviceId, commandType);
       await reload();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "error enviando el comando");
+      setError(err instanceof ApiError ? err.message : t("device_detail.error_sending_command"));
     } finally {
       setBusy(false);
       setStopArmed(false);
@@ -366,14 +349,13 @@ function DeviceEngineControls({ deviceId, deviceLabel }: { deviceId: string; dev
     // defaultOpen=false on purpose: the most sensitive action in the panel
     // (cutting fuel to a real vehicle) -- opened when needed, it does not take
     // up space by default like Alarms.
-    <CollapsibleSection title="Motor">
+    <CollapsibleSection title={t("device_detail.engine_section")}>
       {error && <Alert>{error}</Alert>}
 
       {stopArmed ? (
         <div className="space-y-2 rounded-sm border border-red-500/40 bg-red-500/5 p-2">
           <p className="text-ink">
-            Escribe <span className="font-data font-semibold text-ink">{deviceLabel}</span> para confirmar el corte
-            de motor.
+            {t("device_detail.confirm_cut_text", { label: deviceLabel })}
           </p>
           <Input
             autoFocus
@@ -387,7 +369,7 @@ function DeviceEngineControls({ deviceId, deviceLabel }: { deviceId: string; dev
               onClick={() => send("engine_stop")}
               className="flex-1 border-transparent bg-red-600 text-white hover:bg-red-700"
             >
-              Sí, cortar motor
+              {t("device_detail.confirm_cut_button")}
             </Button>
             <Button
               variant="secondary"
@@ -398,17 +380,17 @@ function DeviceEngineControls({ deviceId, deviceLabel }: { deviceId: string; dev
                 setStopConfirmText("");
               }}
             >
-              Cancelar
+              {t("device_detail.cancel")}
             </Button>
           </div>
         </div>
       ) : resumeArmed ? (
         <div className="flex gap-2">
           <Button disabled={busy} className="flex-1" onClick={() => send("engine_resume")}>
-            Sí, reconectar
+            {t("device_detail.confirm_restore_button")}
           </Button>
           <Button variant="secondary" disabled={busy} className="flex-1" onClick={cancelResumeArm}>
-            Cancelar
+            {t("device_detail.cancel")}
           </Button>
         </div>
       ) : (
@@ -418,7 +400,7 @@ function DeviceEngineControls({ deviceId, deviceLabel }: { deviceId: string; dev
             onClick={() => setStopArmed(true)}
             className="flex-1 border-transparent bg-red-600 text-white hover:bg-red-700"
           >
-            Cortar motor
+            {t("device_detail.cmd_disable_engine")}
           </Button>
           <Button
             variant="secondary"
@@ -430,44 +412,40 @@ function DeviceEngineControls({ deviceId, deviceLabel }: { deviceId: string; dev
               resumeTimeoutRef.current = setTimeout(() => setResumeArmed(false), RESUME_CONFIRM_TIMEOUT_MS);
             }}
           >
-            Reconectar motor
+            {t("device_detail.cmd_restore_engine")}
           </Button>
         </div>
       )}
 
       <div className="space-y-2 border-t border-line pt-2">
         <div className="flex items-center justify-between">
-          <p className="font-semibold tracking-wide text-ink-dim uppercase">Historial</p>
+          <p className="font-semibold tracking-wide text-ink-dim uppercase">{t("device_detail.history_section")}</p>
           <Link
             to={`/devices/${deviceId}/commands?device_label=${encodeURIComponent(deviceLabel)}`}
             className="text-brand-500 hover:underline"
           >
-            Ver historial completo
+            {t("device_detail.view_full_history")}
           </Link>
         </div>
         {history.length === 0 ? (
-          <p className="text-ink-dim">Sin comandos enviados todavía.</p>
+          <p className="text-ink-dim">{t("device_detail.no_commands")}</p>
         ) : (
           <ul className="divide-y divide-line">
             {history.map((c) => (
               <li key={c.id} className="space-y-0.5 py-1.5">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="min-w-0 truncate text-ink">{ENGINE_COMMAND_LABEL[c.command_type]}</span>
-                  <Badge tone={COMMAND_STATUS_TONE[c.status]}>{COMMAND_STATUS_LABEL[c.status]}</Badge>
+                  <span className="min-w-0 truncate text-ink">{t(`device_detail.cmd_${c.command_type === "engine_stop" ? "disable_engine" : "restore_engine"}`)}</span>
+                  <Badge tone={COMMAND_STATUS_TONE[c.status]}>{t(`device_detail.cmd_${c.status}`)}</Badge>
                 </div>
                 <p className="text-[11px] text-ink-dim">
-                  Pedido por {c.requested_by_email} · {new Date(c.requested_at).toLocaleString()}
+                  {t("device_detail.cmd_requested_by", { email: c.requested_by_email, date: new Date(c.requested_at).toLocaleString() })}
                 </p>
                 <p className="text-[11px] text-ink-dim">
-                  {c.completed_at ? (
-                    <>Resuelto: {new Date(c.completed_at).toLocaleString()}</>
-                  ) : (
-                    <>Aún en curso, sin resolver</>
-                  )}
+                  {c.completed_at ? t("device_detail.cmd_resolved", { date: new Date(c.completed_at).toLocaleString() }) : t("device_detail.cmd_pending_long")}
                 </p>
                 <p className="text-[11px] text-ink-dim">
-                  Respuesta del dispositivo:{" "}
-                  {c.device_reply ? <span className="font-data text-ink">{c.device_reply}</span> : "(sin texto)"}
+                  {t("device_detail.cmd_device_reply")}{" "}
+                  {c.device_reply ? <span className="font-data text-ink">{c.device_reply}</span> : t("device_detail.cmd_no_reply")}
                 </p>
               </li>
             ))}
@@ -542,6 +520,7 @@ export function DeviceDetailPanel({
   onClose: () => void;
   hasAlarm?: boolean;
 }) {
+  const { t } = useTranslation();
   const offlineThresholdSeconds = useDeviceOfflineThreshold();
   useNowTick(); // without this, "X ago"/"seen X ago" would freeze
   const recent = isDeviceRecent(device.last_seen_at, offlineThresholdSeconds);
@@ -558,7 +537,7 @@ export function DeviceDetailPanel({
   const meta = UNIT_STATUS_META[status];
   const [activeAlarm, setActiveAlarm] = useState<Alarm | null>(null);
   const channels: Array<{ ch: number | undefined; name: string }> =
-    device.protocol === "gt06_video" ? [{ ch: 0, name: "Frontal" }, { ch: 1, name: "Cabina" }] : [{ ch: undefined, name: "Cámara" }];
+    device.protocol === "gt06_video" ? [{ ch: 0, name: t("clips.camera_front") }, { ch: 1, name: t("clips.camera_cabin") }] : [{ ch: undefined, name: t("device_detail.quick_camera") }];
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -573,7 +552,7 @@ export function DeviceDetailPanel({
           </p>
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             <Badge tone={meta.tone}>
-              {status === "alarm" && activeAlarm ? `Alarma: ${alarmTypeLabel(activeAlarm.alarm_type)}` : meta.label}
+              {status === "alarm" && activeAlarm ? t("device_detail.alarm_header", { type: alarmTypeLabel(activeAlarm.alarm_type) }) : meta.label}
             </Badge>
             <span className="text-[11px] text-ink-faint">{lastSeenLabel(device.last_seen_at, offlineThresholdSeconds)}</span>
           </div>
@@ -581,7 +560,7 @@ export function DeviceDetailPanel({
         <button
           onClick={onClose}
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink-dim hover:bg-fg/[0.08] hover:text-ink"
-          aria-label="Cerrar"
+          aria-label={t("device_detail.close")}
         >
           <CloseIcon size={15} />
         </button>
@@ -591,7 +570,7 @@ export function DeviceDetailPanel({
       <div className="grid grid-cols-3 gap-2 px-4 pb-3">
         {hasCamera(device.protocol) && (
           <QuickAction
-            label={device.protocol === "gt06_video" ? "Cámaras" : "Cámara"}
+            label={device.protocol === "gt06_video" ? t("device_detail.quick_cameras") : t("device_detail.quick_camera")}
             active={channels.some((c) => isOpen(device.id, c.ch))}
             onClick={() =>
               channels.forEach((c) =>
@@ -603,11 +582,11 @@ export function DeviceDetailPanel({
           </QuickAction>
         )}
         {position && (
-          <QuickAction label={trailVisible ? "Ocultar ruta" : "Última hora"} active={trailVisible} onClick={onToggleTrail}>
+          <QuickAction label={trailVisible ? t("device_detail.quick_hide_trail") : t("device_detail.quick_last_hour")} active={trailVisible} onClick={onToggleTrail}>
             <RouteHistoryIcon size={18} />
           </QuickAction>
         )}
-        <QuickAction label="Historial" to={`/route-history?device=${device.id}`}>
+        <QuickAction label={t("device_detail.quick_history")} to={`/route-history?device=${device.id}`}>
           <HistoryIcon size={18} />
         </QuickAction>
       </div>
@@ -615,7 +594,7 @@ export function DeviceDetailPanel({
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pb-4">
         {/* Metrics -- small label, large value. */}
         <div className="grid grid-cols-2 gap-2">
-          <Metric label="Velocidad">
+          <Metric label={t("device_detail.metric_speed")}>
             {liveSpeed != null ? (
               <>
                 {Math.round(liveSpeed)} <span className="text-xs font-medium text-ink-faint">km/h</span>
@@ -628,24 +607,24 @@ export function DeviceDetailPanel({
               "—"
             )}
           </Metric>
-          <Metric label="Ignición">
+          <Metric label={t("device_detail.metric_ignition")}>
             <span className="flex items-center gap-1.5">
               <span className={recent && device.ignition_on ? "text-accent-warn" : "text-ink-faint"}>
                 <IgnitionKeyIcon size={16} />
               </span>
               <span className={recent ? "" : "text-ink-dim"}>
-                {device.ignition_on === null ? "—" : !recent ? "Desconocida" : device.ignition_on ? "Encendida" : "Apagada"}
+                {device.ignition_on === null ? "—" : !recent ? t("device_detail.ignition_unknown") : device.ignition_on ? t("device_detail.ignition_on_state") : t("device_detail.ignition_off_state")}
               </span>
             </span>
           </Metric>
-          <Metric label="Rumbo">{position?.heading != null ? `${position.heading.toFixed(0)}°` : "—"}</Metric>
-          <Metric label="Conductor">
+          <Metric label={t("device_detail.metric_heading")}>{position?.heading != null ? `${position.heading.toFixed(0)}°` : "—"}</Metric>
+          <Metric label={t("device_detail.metric_driver")}>
             <span className="truncate">{vehicle?.current_driver_name ?? "—"}</span>
           </Metric>
         </div>
         {device.ignition_changed_at && (
           <p className="text-[11px] text-ink-faint">
-            {IGNITION_TOOLTIP} Último cambio {timeAgoLabel(device.ignition_changed_at)}.
+            {t("device_detail.ignition_tooltip")} {t("device_detail.ignition_last_changed", { time: timeAgoLabel(device.ignition_changed_at) })}
           </p>
         )}
 
@@ -658,18 +637,18 @@ export function DeviceDetailPanel({
           <p className="text-xs text-ink-dim">
             {device.vehicle_id ? (
               <>
-                Sin límite de velocidad —{" "}
+                {t("device_detail.no_speed_limit")} —{" "}
                 <Link to={`/admin/tenants/${device.tenant_id}?tab=fleet`} className="text-brand-400 hover:underline">
-                  configurar
+                  {t("device_detail.configure_link")}
                 </Link>
               </>
             ) : (
               <>
-                Sin vehículo vinculado —{" "}
+                {t("device_detail.no_vehicle_linked")} —{" "}
                 <Link to={`/admin/tenants/${device.tenant_id}`} className="text-brand-400 hover:underline">
-                  vincular uno
+                  {t("device_detail.link_vehicle")}
                 </Link>{" "}
-                para configurar un límite.
+                {t("device_detail.set_limit_suffix")}
               </>
             )}
           </p>
@@ -679,7 +658,7 @@ export function DeviceDetailPanel({
             {position.lat.toFixed(5)}, {position.lon.toFixed(5)} · {new Date(position.time).toLocaleString()}
           </p>
         ) : (
-          <p className="text-xs text-ink-dim">Esta unidad todavía no ha reportado posición.</p>
+          <p className="text-xs text-ink-dim">{t("device_detail.no_position")}</p>
         )}
 
         {/*
@@ -693,7 +672,7 @@ export function DeviceDetailPanel({
               action={
                 tenant && (
                   <span className="text-[11px] text-ink-dim">
-                    <span className="font-data font-semibold text-ink">{formatQuota(liveBalance?.remaining ?? tenant.live_view_seconds_remaining)}</span> este mes
+                    <span className="font-data font-semibold text-ink">{formatQuota(liveBalance?.remaining ?? tenant.live_view_seconds_remaining)}</span> {t("device_detail.this_month")}
                   </span>
                 )
               }
@@ -712,7 +691,7 @@ export function DeviceDetailPanel({
                   }
                   className="flex w-full items-center justify-center gap-1.5 rounded-xl py-1.5 text-xs font-medium text-ink-dim hover:bg-fg/[0.05] hover:text-ink"
                 >
-                  {isOpen(device.id, c.ch) ? "Ya está abierta" : "Abrir en ventana flotante ↗"}
+                  {isOpen(device.id, c.ch) ? t("device_detail.camera_already_open") : t("device_detail.camera_open_floating")}
                 </button>
               </div>
             ))}
@@ -722,7 +701,7 @@ export function DeviceDetailPanel({
         {tenant && (
           <p className="text-[11px] text-ink-faint">
             <Tooltip label={STATUS_TOOLTIP}>
-              <span>Estado administrativo: {device.status}</span>
+              <span>{t("device_detail.admin_status", { status: device.status })}</span>
             </Tooltip>
             {" · "}
             {tenant.name}
@@ -741,7 +720,7 @@ export function DeviceDetailPanel({
         )}
 
         {device.notes && (
-          <CollapsibleSection title="Notas">
+          <CollapsibleSection title={t("device_detail.notes_section")}>
             <p className="whitespace-pre-wrap text-ink">{device.notes}</p>
           </CollapsibleSection>
         )}

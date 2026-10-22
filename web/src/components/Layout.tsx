@@ -1,35 +1,15 @@
 import { useState, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { useAuth } from "../lib/auth";
 import { useNotifications } from "../lib/useNotifications";
 import { useIsMobile } from "../lib/useIsMobile";
 import { BellIcon, BillingIcon, CameraIcon, GearIcon, GeofenceIcon, LogOutIcon, MapPinIcon, MoreIcon, OperationsIcon, PanelCloseIcon, PanelOpenIcon, ReportIcon, RouteHistoryIcon, TruckIcon } from "./icons";
 import { ThemeSwitcher } from "./ThemeSwitcher";
+import { LanguageSwitcher } from "./LanguageSwitcher";
 import { BottomTabBar, type TabItem } from "./BottomTabBar";
 import { CameraDock } from "./CameraDock";
-
-// "Billing" only for platform and tenant_admin (require_tenant_admin in the
-// backend) -- filtered out of the rail instead of leading to an empty screen.
-const navItems = [
-  { to: "/map", label: "Mapa", Icon: MapPinIcon },
-  { to: "/live", label: "En vivo", Icon: CameraIcon },
-  { to: "/notifications", label: "Notificaciones", Icon: BellIcon },
-  { to: "/operations", label: "Operación", Icon: OperationsIcon },
-  { to: "/route-history", label: "Historial", Icon: RouteHistoryIcon },
-  { to: "/geofences", label: "Geocercas", Icon: GeofenceIcon },
-  { to: "/reports", label: "Reportes", Icon: ReportIcon },
-  { to: "/billing", label: "Facturación", Icon: BillingIcon, roles: ["super_admin", "support", "tenant_admin"] },
-  { to: "/admin", label: "Administración", Icon: GearIcon },
-];
-
-const ROLE_LABEL: Record<string, string> = {
-  super_admin: "Super admin",
-  support: "Soporte",
-  tenant_admin: "Administrador",
-  tenant_operator: "Operador",
-  tenant_viewer: "Consulta",
-};
 
 const RAIL_KEY = "omd-rail-expanded";
 
@@ -46,10 +26,6 @@ function Brand({ compact }: { compact: boolean }) {
   return (
     <div className={`flex items-center gap-2.5 ${compact ? "justify-center" : ""}`}>
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-fg/[0.06] ring-1 ring-fg/10">
-        {/*
-         * White label: tenant logo/name when configured; OpenMDVR by default
-         * (a platform session has no brand of its own).
-         */}
         <img src={tenantLogoUrl ?? "/logo-mark.png"} alt="" className="h-5 w-5 object-contain" />
       </span>
       {!compact && <span className="truncate text-sm font-semibold tracking-tight text-ink">{tenantDisplayName ?? "OpenMDVR"}</span>}
@@ -57,17 +33,26 @@ function Brand({ compact }: { compact: boolean }) {
   );
 }
 
-// Desktop rail: fixed width with an expand button (persisted per browser). In
-// compact mode each icon shows its label in a tooltip on hover.
 function DesktopRail({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }) {
   const { role, logout } = useAuth();
   const { unreadCount } = useNotifications();
+  const { t } = useTranslation();
+
+  const navItems = [
+    { to: "/map", label: t("nav.map"), Icon: MapPinIcon },
+    { to: "/live", label: t("nav.live"), Icon: CameraIcon },
+    { to: "/notifications", label: t("nav.notifications"), Icon: BellIcon },
+    { to: "/operations", label: t("nav.operations"), Icon: OperationsIcon },
+    { to: "/route-history", label: t("nav.history"), Icon: RouteHistoryIcon },
+    { to: "/geofences", label: t("nav.geofences"), Icon: GeofenceIcon },
+    { to: "/reports", label: t("nav.reports"), Icon: ReportIcon },
+    { to: "/billing", label: t("nav.billing"), Icon: BillingIcon, roles: ["super_admin", "support", "tenant_admin"] },
+    { to: "/admin", label: t("nav.admin"), Icon: GearIcon },
+  ];
+
+  const roleLabel = t(`roles.${role ?? ""}`, { defaultValue: role ?? "U" });
 
   return (
-    // h-full + min-h-0 and a list with its own scroll: the menu is NEVER taller
-    // than the window. With the menu collapsed the footer (theme, collapse,
-    // logout) stacks vertically; without this the column overflowed the screen,
-    // the whole page became scrollable and "log out" ended up off screen.
     <aside className={`glass-rail relative z-20 flex h-full min-h-0 shrink-0 flex-col transition-[width] duration-200 ${expanded ? "w-60" : "w-[72px]"}`}>
       <div className="shrink-0 px-3.5 pt-4 pb-5">
         <Brand compact={!expanded} />
@@ -83,8 +68,6 @@ function DesktopRail({ expanded, onToggle }: { expanded: boolean; onToggle: () =
                 key={to}
                 to={to}
                 aria-label={label}
-                // Collapsed: the name goes in the native tooltip (a custom
-                // bubble would be clipped by the list's scroll).
                 title={expanded ? undefined : label}
                 className={({ isActive }) =>
                   `group/nav relative flex h-11 items-center gap-3 rounded-xl text-sm font-medium transition-colors ${
@@ -113,30 +96,31 @@ function DesktopRail({ expanded, onToggle }: { expanded: boolean; onToggle: () =
 
       <div className="shrink-0 space-y-2 border-t border-line p-3">
         <ThemeSwitcher expanded={expanded} />
-        <div className={`flex items-center gap-2.5 rounded-xl py-2 ${expanded ? "px-2" : "justify-center"}`} title={ROLE_LABEL[role ?? ""] ?? role ?? ""}>
+        <LanguageSwitcher expanded={expanded} />
+        <div className={`flex items-center gap-2.5 rounded-xl py-2 ${expanded ? "px-2" : "justify-center"}`} title={roleLabel}>
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-xs font-bold text-white">
-            {(ROLE_LABEL[role ?? ""] ?? "U").slice(0, 1)}
+            {roleLabel.slice(0, 1)}
           </span>
           {expanded && (
             <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-semibold text-ink">{ROLE_LABEL[role ?? ""] ?? role}</p>
+              <p className="truncate text-xs font-semibold text-ink">{roleLabel}</p>
               <button onClick={logout} className="text-[11px] text-ink-dim hover:text-rose-300">
-                Cerrar sesión
+                {t("layout.logout")}
               </button>
             </div>
           )}
         </div>
         <button
           onClick={onToggle}
-          aria-label={expanded ? "Contraer menú" : "Expandir menú"}
-          title={expanded ? "Contraer menú" : "Expandir menú"}
+          aria-label={expanded ? t("layout.collapse_menu") : t("layout.expand_menu")}
+          title={expanded ? t("layout.collapse_menu") : t("layout.expand_menu")}
           className={`flex h-9 w-full items-center gap-2 rounded-xl text-xs text-ink-faint hover:bg-fg/[0.05] hover:text-ink ${expanded ? "px-3" : "justify-center"}`}
         >
           {expanded ? <PanelCloseIcon /> : <PanelOpenIcon />}
-          {expanded && "Contraer"}
+          {expanded && t("layout.collapse")}
         </button>
         {!expanded && (
-          <button onClick={logout} aria-label="Cerrar sesión" title="Cerrar sesión" className="flex h-9 w-full items-center justify-center rounded-xl text-ink-faint hover:bg-rose-500/10 hover:text-rose-300">
+          <button onClick={logout} aria-label={t("layout.logout")} title={t("layout.logout")} className="flex h-9 w-full items-center justify-center rounded-xl text-ink-faint hover:bg-rose-500/10 hover:text-rose-300">
             <LogOutIcon />
           </button>
         )}
@@ -145,15 +129,14 @@ function DesktopRail({ expanded, onToggle }: { expanded: boolean; onToggle: () =
   );
 }
 
-// Mobile tabs: direct access to the most-used sections (map, units,
-// notifications); everything else lives under "More".
 function useMobileTabItems(): TabItem[] {
   const { unreadCount } = useNotifications();
+  const { t } = useTranslation();
   return [
-    { to: "/map", label: "Mapa", Icon: MapPinIcon },
-    { to: "/units", label: "Unidades", Icon: TruckIcon },
-    { to: "/notifications", label: "Alertas", Icon: BellIcon, badge: unreadCount },
-    { to: "/more", label: "Más", Icon: MoreIcon },
+    { to: "/map", label: t("nav.map"), Icon: MapPinIcon },
+    { to: "/units", label: t("nav.units"), Icon: TruckIcon },
+    { to: "/notifications", label: t("nav.alerts"), Icon: BellIcon, badge: unreadCount },
+    { to: "/more", label: t("nav.more"), Icon: MoreIcon },
   ];
 }
 
@@ -178,10 +161,6 @@ export function Layout({ children }: { children: ReactNode }) {
   if (isMobile) {
     return (
       <div className="ambient flex h-full flex-col overflow-hidden">
-        {/*
-         * pt with env(safe-area-inset-top) for the notch/dynamic island;
-         * requires viewport-fit=cover in index.html.
-         */}
         <header className="flex shrink-0 items-center justify-between gap-2 px-4 pt-[calc(0.6rem+env(safe-area-inset-top))] pb-2.5">
           <Brand compact={false} />
         </header>
