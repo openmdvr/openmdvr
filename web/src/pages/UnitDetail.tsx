@@ -1,4 +1,5 @@
 import { useNavigate, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useFleetRoster } from "../lib/useFleetRoster";
 import { DeviceDetailPanel } from "../components/DeviceDetailPanel";
 import { Alert, Button, EmptyState } from "../components/ui";
@@ -10,6 +11,7 @@ import { Alert, Button, EmptyState } from "../components/ui";
 // trail already drawn (?device=&trail=1, see MapView.tsx), since this page has
 // no map of its own.
 export default function UnitDetail() {
+  const { t } = useTranslation();
   const { deviceId } = useParams<{ deviceId: string }>();
   const navigate = useNavigate();
   const { error, deviceById, vehicleById, tenantById, positionByDevice, severityByDevice } = useFleetRoster();
@@ -25,12 +27,12 @@ export default function UnitDetail() {
         </div>
       )}
       {!device ? (
-        <EmptyState>Unidad no encontrada.</EmptyState>
+        <EmptyState>{t("unit_detail.not_found")}</EmptyState>
       ) : (
         <>
           <div className="px-4 pt-1">
             <Button variant="secondary" className="w-full" onClick={() => navigate(`/map?device=${device.id}`)}>
-              Seguir en el mapa
+              {t("unit_detail.follow_on_map")}
             </Button>
           </div>
           <div className="min-h-0 flex-1">

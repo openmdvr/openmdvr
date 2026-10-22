@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -38,8 +39,8 @@ import { daysAgoLocalIso, startOfLocalDayIso, startOfNextLocalDayIso, todayLocal
 
 const MEXICO_CITY: [number, number] = [19.4326, -99.1332];
 const DETAIL_LEVELS = [
-  { label: "Normal", points: 1500 },
-  { label: "Alto", points: 3000 },
+  { key: "detail_normal" as const, points: 1500 },
+  { key: "detail_high" as const, points: 3000 },
 ];
 const PLAYBACK_SPEEDS = [1, 16, 60, 240];
 const STOP_MIN_SECONDS = 180;
@@ -233,6 +234,7 @@ function findIndexAtTime(points: RouteHistoryPoint[], t: number): number {
 }
 
 export default function RouteHistory() {
+  const { t } = useTranslation();
   const isMobile = useIsMobile();
   const geofenceOverlay = useGeofenceOverlay();
   const [searchParams] = useSearchParams();
@@ -299,7 +301,7 @@ export default function RouteHistory() {
       setActiveRouteId(deviceId);
       setPlaying(false);
       setPlayTime(null);
-      if (report.points.length === 0) setError("Esta unidad no tiene posiciones en ese rango.");
+      if (report.points.length === 0) setError(t("route_history.no_positions"));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "error cargando el recorrido");
     } finally {
@@ -402,7 +404,7 @@ export default function RouteHistory() {
           if (!playing && (playTime == null || playTime >= endMs)) setPlayTime(startMs);
           setPlaying((p) => !p);
         }}
-        aria-label={playing ? "Pausar" : "Reproducir"}
+        aria-label={playing ? t("route_history.pause") : t("route_history.play")}
         className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-600 text-white shadow-lg hover:bg-brand-500"
       >
         {playing ? (
@@ -427,7 +429,7 @@ export default function RouteHistory() {
             setPlayTime(Number(e.target.value));
           }}
           className="w-full accent-brand-600"
-          aria-label="Línea de tiempo del recorrido"
+          aria-label={t("route_history.timeline_aria")}
         />
         <div className="flex justify-between text-[11px] text-ink-dim">
           <span className="font-data">
@@ -462,10 +464,10 @@ export default function RouteHistory() {
           value={deviceId}
           onChange={(e) => setDeviceId(e.target.value)}
           className="block w-full rounded-xl border border-line-strong bg-surface-2 px-3 py-2 text-sm text-ink outline-none focus:border-brand-500"
-          aria-label="Unidad"
+          aria-label={t("route_history.unit_aria")}
         >
           <option value="" disabled>
-            Selecciona una unidad…
+            {t("common.select_placeholder")}
           </option>
           {devices.map((d) => (
             <option key={d.id} value={d.id}>
@@ -476,10 +478,10 @@ export default function RouteHistory() {
         <div className="grid grid-cols-4 gap-1 rounded-xl bg-fg/[0.04] p-1">
           {(
             [
-              ["today", "Hoy"],
-              ["yesterday", "Ayer"],
+              ["today", t("route_history.period_today")],
+              ["yesterday", t("route_history.period_yesterday")],
               ["7d", "7 días"],
-              ["custom", "Rango"],
+              ["custom", t("route_history.period_custom")],
             ] as const
           ).map(([key, label]) => (
             <button
@@ -498,19 +500,19 @@ export default function RouteHistory() {
           </div>
         )}
         <div className="flex items-center gap-2">
-          <div className="flex rounded-xl bg-fg/[0.04] p-1" title="Nivel de detalle: más puntos = ruta más precisa, carga un poco más lenta">
+          <div className="flex rounded-xl bg-fg/[0.04] p-1" title={t("route_history.detail_tooltip")}>
             {DETAIL_LEVELS.map((lvl) => (
               <button
                 key={lvl.points}
                 onClick={() => setMaxPoints(lvl.points)}
                 className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold ${maxPoints === lvl.points ? "bg-fg/[0.12] text-ink" : "text-ink-dim hover:text-ink"}`}
               >
-                {lvl.label}
+                {t(`route_history.${lvl.key}`)}
               </button>
             ))}
           </div>
           <Button disabled={busy || !deviceId} onClick={loadRoute} className="flex-1">
-            {busy ? "Cargando…" : routes.some((r) => r.deviceId === deviceId) ? "Actualizar" : "Ver recorrido"}
+            {busy ? t("route_history.loading") : routes.some((r) => r.deviceId === deviceId) ? t("route_history.update") : t("route_history.view")}
           </Button>
         </div>
       </div>
@@ -550,18 +552,18 @@ export default function RouteHistory() {
             <SpeedLegend />
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <Stat label="Distancia" value={stats.distanceKm.toFixed(1)} unit="km" />
-            <Stat label="En movimiento" value={formatDuration(stats.movingSeconds)} />
-            <Stat label="Vel. máxima" value={String(Math.round(stats.maxSpeed))} unit="km/h" />
-            <Stat label="Vel. promedio" value={stats.avgMovingSpeed != null ? String(Math.round(stats.avgMovingSpeed)) : "—"} unit={stats.avgMovingSpeed != null ? "km/h" : undefined} />
-            <Stat label="Paradas (≥3 min)" value={String(stats.stops)} />
-            <Stat label="Eventos" value={String(activeRoute.report.events.length)} />
+            <Stat label={t("route_history.stat_distance")} value={stats.distanceKm.toFixed(1)} unit="km" />
+            <Stat label={t("route_history.stat_moving")} value={formatDuration(stats.movingSeconds)} />
+            <Stat label={t("route_history.stat_max_speed")} value={String(Math.round(stats.maxSpeed))} unit="km/h" />
+            <Stat label={t("route_history.stat_avg_speed")} value={stats.avgMovingSpeed != null ? String(Math.round(stats.avgMovingSpeed)) : "—"} unit={stats.avgMovingSpeed != null ? "km/h" : undefined} />
+            <Stat label={t("route_history.stat_stops")} value={String(stats.stops)} />
+            <Stat label={t("route_history.stat_events")} value={String(activeRoute.report.events.length)} />
           </div>
-          <p className="text-[11px] text-ink-faint">Calculado sobre {points.length} puntos resumidos del periodo; valores aproximados.</p>
+          <p className="text-[11px] text-ink-faint">{t("route_history.approx_note", { count: points.length })}</p>
           {geofenceOverlay.geofences.length > 0 && (
             <label className="flex items-center gap-2 text-xs text-ink-dim">
               <input type="checkbox" className="h-3.5 w-3.5 accent-brand-600" checked={geofenceOverlay.visible} onChange={geofenceOverlay.toggle} />
-              Mostrar geocercas
+              {t("route_history.show_geofences")}
             </label>
           )}
         </div>

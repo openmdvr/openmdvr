@@ -20,12 +20,13 @@ import {
 } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import {
-  STATUS_TOOLTIP,
   UNIT_STATUS_META,
   isDeviceRecent,
   lastSeenLabel,
+  statusTooltip,
   timeAgoLabel,
   unitStatus,
+  unitStatusLabel,
   useDeviceOfflineThreshold,
   useNowTick,
 } from "../lib/deviceStatus";
@@ -552,7 +553,7 @@ export function DeviceDetailPanel({
           </p>
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             <Badge tone={meta.tone}>
-              {status === "alarm" && activeAlarm ? t("device_detail.alarm_header", { type: alarmTypeLabel(activeAlarm.alarm_type) }) : meta.label}
+              {status === "alarm" && activeAlarm ? t("device_detail.alarm_header", { type: alarmTypeLabel(activeAlarm.alarm_type) }) : unitStatusLabel(status)}
             </Badge>
             <span className="text-[11px] text-ink-faint">{lastSeenLabel(device.last_seen_at, offlineThresholdSeconds)}</span>
           </div>
@@ -700,7 +701,7 @@ export function DeviceDetailPanel({
 
         {tenant && (
           <p className="text-[11px] text-ink-faint">
-            <Tooltip label={STATUS_TOOLTIP}>
+            <Tooltip label={statusTooltip()}>
               <span>{t("device_detail.admin_status", { status: device.status })}</span>
             </Tooltip>
             {" · "}

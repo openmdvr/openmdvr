@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useFleetRoster } from "../lib/useFleetRoster";
 import { DeviceListPanel } from "../components/DeviceListPanel";
 import { Alert } from "../components/ui";
@@ -7,13 +8,14 @@ import { Alert } from "../components/ui";
 // its card; each row's camera button opens the camera right there, without
 // navigating (see lib/floatingCameras.tsx).
 export default function UnitsView() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { devices, vehicleById, positionByDevice, severityByDevice, error } = useFleetRoster();
 
   return (
     <div className="flex h-full flex-col">
       <div className="px-4 pt-1">
-        <h1 className="text-xl font-semibold tracking-tight text-ink">Unidades</h1>
+        <h1 className="text-xl font-semibold tracking-tight text-ink">{t("nav.units")}</h1>
       </div>
       {error && (
         <div className="px-4 pt-2">

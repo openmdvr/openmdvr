@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
+import i18next from "i18next";
 import { Link, useSearchParams } from "react-router-dom";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -16,7 +18,7 @@ import { useGeofenceOverlay } from "../lib/useGeofenceOverlay";
 import { GeofenceLayer } from "../components/GeofenceLayer";
 import { CameraIcon, CloseIcon, GeofenceIcon, LocateIcon, MinusIcon, PanelCloseIcon, PanelOpenIcon, PlusIcon, RefreshIcon, SearchIcon } from "../components/icons";
 import { MapBaseLayer, MapStyleSwitcher } from "../components/MapBaseLayer";
-import { UNIT_STATUS_META, lastSeenLabel, useDeviceOfflineThreshold, type UnitStatus } from "../lib/deviceStatus";
+import { UNIT_STATUS_META, lastSeenLabel, unitStatusLabel, useDeviceOfflineThreshold, type UnitStatus } from "../lib/deviceStatus";
 import { useFloatingCameras } from "../lib/floatingCameras";
 
 // Main map. Decisions:
@@ -32,11 +34,14 @@ import { useFloatingCameras } from "../lib/floatingCameras";
 
 const MEXICO_CITY: [number, number] = [19.4326, -99.1332];
 
-const CONNECTION_LABEL: Record<LiveConnectionState, string> = {
-  connecting: "Conectando…",
-  open: "En vivo",
-  reconnecting: "Reconectando…",
-};
+function connectionLabel(state: LiveConnectionState): string {
+  const map: Record<LiveConnectionState, string> = {
+    connecting: i18next.t("map.connection_connecting"),
+    open: i18next.t("map.connection_live"),
+    reconnecting: i18next.t("map.connection_reconnecting"),
+  };
+  return map[state];
+}
 
 // Icons cached by their visual key: with hundreds of units and positions
 // arriving over SSE, recreating a DivIcon per render forced Leaflet to replace
@@ -102,6 +107,7 @@ function MapControls({
   onToggleGeofences: () => void;
   className: string;
 }) {
+  const { t } = useTranslation();
   const map = useMap();
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -119,21 +125,21 @@ function MapControls({
     <div ref={ref} className={`absolute z-[1000] flex flex-col items-end gap-2 transition-[right] duration-200 ${className}`}>
       <MapStyleSwitcher className="relative" />
       <div className="glass flex flex-col divide-y divide-fg/[0.06] overflow-hidden rounded-xl">
-        <ControlButton label="Acercar" onClick={() => map.zoomIn()}>
+        <ControlButton label={t("map.zoom_in")} onClick={() => map.zoomIn()}>
           <PlusIcon />
         </ControlButton>
-        <ControlButton label="Alejar" onClick={() => map.zoomOut()}>
+        <ControlButton label={t("map.zoom_out")} onClick={() => map.zoomOut()}>
           <MinusIcon />
         </ControlButton>
-        <ControlButton label="Ver toda la flota" onClick={fitAll}>
+        <ControlButton label={t("map.fit_fleet")} onClick={fitAll}>
           <LocateIcon />
         </ControlButton>
         {geofenceCount > 0 && (
-          <ControlButton label={geofencesVisible ? "Ocultar geocercas" : "Mostrar geocercas"} onClick={onToggleGeofences} active={geofencesVisible}>
+          <ControlButton label={geofencesVisible ? t("map.hide_geofences") : t("map.show_geofences")} onClick={onToggleGeofences} active={geofencesVisible}>
             <GeofenceIcon />
           </ControlButton>
         )}
-        <ControlButton label="Refrescar flota" onClick={onRefresh}>
+        <ControlButton label={t("map.refresh")} onClick={onRefresh}>
           <RefreshIcon />
         </ControlButton>
       </div>
@@ -192,12 +198,13 @@ function CheckinPointView({ point }: { point: CheckinPoint | null }) {
     map.setView([point.lat, point.lon], 15);
   }, [point, map]);
   if (!point) return null;
+  const { t } = useTranslation();
   return (
     <Marker position={[point.lat, point.lon]} icon={checkinPointIcon()}>
       <Popup>
         <strong>{point.label}</strong>
         <br />
-        Punto histórico de check-in, no es una posición en vivo.
+        {t("map.checkin_popup")}
       </Popup>
     </Marker>
   );
@@ -215,6 +222,7 @@ function FleetSummary({
   onFilter: (s: UnitStatus | null) => void;
   connectionState: LiveConnectionState;
 }) {
+  const { t } = useTranslation();
   const counts = useMemo(() => {
     const c: Partial<Record<UnitStatus, number>> = {};
     rows.forEach((r) => (c[r.status] = (c[r.status] ?? 0) + 1));
@@ -223,9 +231,9 @@ function FleetSummary({
   const order: UnitStatus[] = ["moving", "idle", "stopped", "offline", "alarm"];
   return (
     <div className="glass flex max-w-full items-center gap-1 overflow-x-auto rounded-2xl p-1 no-scrollbar">
-      <span className="flex shrink-0 items-center gap-1.5 px-2.5 text-[11px] font-semibold text-ink-dim" title={CONNECTION_LABEL[connectionState]}>
+      <span className="flex shrink-0 items-center gap-1.5 px-2.5 text-[11px] font-semibold text-ink-dim" title={connectionLabel(connectionState)}>
         <span className={`h-2 w-2 rounded-full ${connectionState === "open" ? "bg-emerald-400" : "animate-pulse bg-amber-400"}`} aria-hidden />
-        <span className="hidden sm:inline">{CONNECTION_LABEL[connectionState]}</span>
+        <span className="hidden sm:inline">{connectionLabel(connectionState)}</span>
       </span>
       {order.map((s) =>
         counts[s] ? (
@@ -235,11 +243,11 @@ function FleetSummary({
             className={`flex shrink-0 items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-medium transition-colors ${
               statusFilter === s ? "bg-fg/[0.12] text-ink" : statusFilter ? "text-ink-faint hover:text-ink" : "text-ink-dim hover:bg-fg/[0.06] hover:text-ink"
             }`}
-            title={`Mostrar solo: ${UNIT_STATUS_META[s].label}`}
+            title={t("map.filter_status", { label: unitStatusLabel(s) })}
           >
             <span className="h-2 w-2 rounded-full" style={{ background: UNIT_STATUS_META[s].color }} aria-hidden />
             <span className="font-data font-semibold text-ink">{counts[s]}</span>
-            <span className="hidden md:inline">{UNIT_STATUS_META[s].label}</span>
+            <span className="hidden md:inline">{unitStatusLabel(s)}</span>
           </button>
         ) : null,
       )}
@@ -312,6 +320,7 @@ function MapCanvas({
 
 // Selected unit card (mobile) -- absolute inside the map container, never fixed.
 function MobileUnitCard({ row, onClose, trailVisible, onToggleTrail }: { row: UnitRow; onClose: () => void; trailVisible: boolean; onToggleTrail: () => void }) {
+  const { t } = useTranslation();
   const threshold = useDeviceOfflineThreshold();
   const { openCamera } = useFloatingCameras();
   const d = row.device;
@@ -323,38 +332,38 @@ function MobileUnitCard({ row, onClose, trailVisible, onToggleTrail }: { row: Un
         <div className="min-w-0 flex-1">
           <p className="truncate text-[15px] font-semibold text-ink">{d.label}</p>
           <p className="truncate text-xs text-ink-dim">
-            {UNIT_STATUS_META[row.status].label}
+            {unitStatusLabel(row.status)}
             {row.liveSpeed != null && row.status === "moving" ? ` · ${Math.round(row.liveSpeed)} km/h` : ` · ${lastSeenLabel(d.last_seen_at, threshold)}`}
           </p>
           {row.vehicle && (
             <p className="truncate text-[11px] text-ink-faint">{[row.vehicle.plate, row.vehicle.current_driver_name].filter(Boolean).join(" · ")}</p>
           )}
         </div>
-        <button onClick={onClose} aria-label="Cerrar" className="flex h-8 w-8 items-center justify-center rounded-full bg-fg/[0.08] text-ink-dim">
+        <button onClick={onClose} aria-label={t("map.close_selection")} className="flex h-8 w-8 items-center justify-center rounded-full bg-fg/[0.08] text-ink-dim">
           <CloseIcon size={14} />
         </button>
       </div>
       <div className="mt-3 grid grid-cols-3 gap-2">
         <Link to={`/units/${d.id}`} className="rounded-2xl bg-brand-600 py-2.5 text-center text-xs font-semibold text-white">
-          Detalle
+          {t("map.unit_detail_link")}
         </Link>
         <button
           disabled={camChannels.length === 0}
           onClick={() =>
             camChannels.forEach((ch) =>
-              openCamera({ deviceId: d.id, channel: ch, protocol: d.protocol, label: ch === 0 ? `${d.label} · Frontal` : ch === 1 ? `${d.label} · Cabina` : d.label }),
+              openCamera({ deviceId: d.id, channel: ch, protocol: d.protocol, label: ch === 0 ? `${d.label} · ${t("clips.camera_front")}` : ch === 1 ? `${d.label} · ${t("clips.camera_cabin")}` : d.label }),
             )
           }
           className="flex items-center justify-center gap-1.5 rounded-2xl bg-fg/[0.08] py-2.5 text-xs font-semibold text-ink disabled:opacity-40"
         >
-          <CameraIcon size={14} /> Cámara
+          <CameraIcon size={14} /> {t("map.camera_button")}
         </button>
         <button
           disabled={!row.position}
           onClick={onToggleTrail}
           className={`rounded-2xl py-2.5 text-xs font-semibold disabled:opacity-40 ${trailVisible ? "bg-brand-600/20 text-brand-300" : "bg-fg/[0.08] text-ink"}`}
         >
-          {trailVisible ? "Ocultar ruta" : "Última hora"}
+          {trailVisible ? t("map.hide_trail") : t("map.last_hour")}
         </button>
       </div>
     </div>
@@ -362,6 +371,7 @@ function MobileUnitCard({ row, onClose, trailVisible, onToggleTrail }: { row: Un
 }
 
 export default function MapView() {
+  const { t } = useTranslation();
   const isMobile = useIsMobile();
   const { devices, positions, connectionState, error, refresh, severityByDevice, positionByDevice, tenantById, vehicleById } = useFleetRoster();
   const geofenceOverlay = useGeofenceOverlay();
@@ -376,7 +386,7 @@ export default function MapView() {
     const lat = Number(searchParams.get("lat"));
     const lon = Number(searchParams.get("lon"));
     if (searchParams.get("lat") == null || !Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-    return { lat, lon, label: searchParams.get("label") ?? "Ubicación" };
+    return { lat, lon, label: searchParams.get("label") ?? i18next.t("map.location_fallback") };
   });
 
   const rows = useUnitRows(devices, vehicleById, positionByDevice, severityByDevice);
@@ -458,7 +468,7 @@ export default function MapView() {
           <div className="pointer-events-auto flex items-center gap-2">
             <Link to="/units" className="glass flex h-11 min-w-0 flex-1 items-center gap-2 rounded-2xl px-3.5 text-sm text-ink-dim">
               <SearchIcon />
-              <span className="truncate">Buscar entre {devices.length} unidades</span>
+              <span className="truncate">{t("map.search_placeholder", { count: devices.length })}</span>
             </Link>
           </div>
           <div className="pointer-events-auto">
@@ -488,12 +498,12 @@ export default function MapView() {
         <aside className="glass absolute top-3 bottom-3 left-3 z-[1100] flex w-[340px] flex-col overflow-hidden rounded-3xl">
           <div className="flex items-center justify-between px-4 pt-3.5">
             <h2 className="text-[15px] font-semibold tracking-tight text-ink">
-              Unidades <span className="font-data text-ink-faint">{devices.length}</span>
+              {t("map.units_header")} <span className="font-data text-ink-faint">{devices.length}</span>
             </h2>
             <button
               onClick={() => setListOpen(false)}
-              aria-label="Ocultar lista"
-              title="Ocultar lista"
+              aria-label={t("map.hide_list")}
+              title={t("map.hide_list")}
               className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-dim hover:bg-fg/[0.08] hover:text-ink"
             >
               <PanelCloseIcon />
@@ -516,7 +526,7 @@ export default function MapView() {
           className="glass absolute top-3 left-3 z-[1100] flex h-11 items-center gap-2 rounded-2xl px-3.5 text-sm font-semibold text-ink"
         >
           <PanelOpenIcon />
-          Unidades <span className="font-data text-ink-faint">{devices.length}</span>
+          {t("map.units_header")} <span className="font-data text-ink-faint">{devices.length}</span>
         </button>
       )}
 

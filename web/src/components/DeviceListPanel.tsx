@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { hasCamera, usesGT06Imei, type AlarmSeverity, type Device, type DevicePosition, type Vehicle } from "../lib/api";
 import {
   isDeviceRecent,
   lastSeenLabel,
   unitStatus,
+  unitStatusLabel,
   UNIT_STATUS_META,
   useDeviceOfflineThreshold,
   useNowTick,
@@ -70,7 +72,7 @@ export function StatusAvatar({ status, size = 36 }: { status: UnitStatus; size?:
     <span
       className="relative flex shrink-0 items-center justify-center rounded-xl"
       style={{ width: size, height: size, background: `${color}22`, color }}
-      title={UNIT_STATUS_META[status].label}
+      title={unitStatusLabel(status)}
     >
       <TruckIcon />
       <span className="absolute -right-0.5 -bottom-0.5 h-3 w-3 rounded-full ring-2 ring-surface" style={{ background: color }} aria-hidden />
@@ -93,6 +95,7 @@ export function DeviceListPanel({
   selectedId: string | null;
   onSelect: (deviceId: string) => void;
 }) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [visible, setVisible] = useState(STEP);
@@ -128,7 +131,7 @@ export function DeviceListPanel({
       <div className="space-y-2.5 p-3">
         <div className="relative">
           <SearchIcon className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-ink-faint" />
-          <Input className="pl-9" placeholder="Buscar unidad, placa, chofer…" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <Input className="pl-9" placeholder={t("unit_list.search_placeholder")} value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>
         <div className="-mx-3 flex gap-1.5 overflow-x-auto px-3 pb-0.5 no-scrollbar">
           {FILTERS.map((f) => {
@@ -144,7 +147,7 @@ export function DeviceListPanel({
                 }`}
               >
                 {color && <span className="h-2 w-2 rounded-full" style={{ background: color }} aria-hidden />}
-                {f === "all" ? "Todas" : UNIT_STATUS_META[f].label}
+                {f === "all" ? t("common.all") : unitStatusLabel(f)}
                 <span className="font-data text-ink-faint">{counts[f]}</span>
               </button>
             );
@@ -154,7 +157,7 @@ export function DeviceListPanel({
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         {filtered.length === 0 ? (
-          <p className="px-3 py-8 text-center text-sm text-ink-dim">{devices.length === 0 ? "Todavía no hay unidades." : "Sin resultados."}</p>
+          <p className="px-3 py-8 text-center text-sm text-ink-dim">{devices.length === 0 ? t("unit_list.empty_no_units") : t("unit_list.empty_no_results")}</p>
         ) : (
           <ul className="space-y-0.5">
             {filtered.slice(0, visible).map(({ device: d, vehicle, status, liveSpeed }) => {
@@ -168,14 +171,14 @@ export function DeviceListPanel({
                       <span className="flex items-center gap-1.5">
                         <span className="truncate text-sm font-semibold text-ink">{d.label}</span>
                         {isDeviceRecent(d.last_seen_at, threshold) && d.ignition_on && (
-                          <span className="shrink-0 text-accent-warn" title="Ignición encendida">
+                          <span className="shrink-0 text-accent-warn" title={t("unit_list.ignition_on")}>
                             <IgnitionKeyIcon size={12} />
                           </span>
                         )}
                       </span>
                       <span className="block truncate text-xs text-ink-dim">
                         {[vehicle?.plate, vehicle?.current_driver_name ?? [vehicle?.make, vehicle?.model].filter(Boolean).join(" ")].filter(Boolean).join(" · ") ||
-                          UNIT_STATUS_META[status].label}
+                          unitStatusLabel(status)}
                       </span>
                     </span>
                     {/*
@@ -207,13 +210,13 @@ export function DeviceListPanel({
                             openCamera({
                               deviceId: d.id,
                               channel: ch,
-                              label: ch === 0 ? `${d.label} · Frontal` : ch === 1 ? `${d.label} · Cabina` : d.label,
+                              label: ch === 0 ? `${d.label} · ${t("clips.camera_front")}` : ch === 1 ? `${d.label} · ${t("clips.camera_cabin")}` : d.label,
                               protocol: d.protocol,
                             }),
                           )
                         }
-                        title={camChannels.length > 1 ? "Ver las 2 cámaras en la cinta" : "Ver la cámara en la cinta"}
-                        aria-label={camChannels.length > 1 ? `Abrir las 2 cámaras de ${d.label}` : `Abrir cámara de ${d.label}`}
+                        title={camChannels.length > 1 ? t("unit_list.camera_dock_both") : t("unit_list.camera_dock_one")}
+                        aria-label={camChannels.length > 1 ? t("unit_list.camera_dock_both_aria", { label: d.label }) : t("unit_list.camera_dock_one_aria", { label: d.label })}
                         className={`relative flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
                           camChannels.some((ch) => isOpen(d.id, ch)) ? "bg-rose-500/15 text-rose-300" : "text-ink-faint hover:bg-fg/[0.08] hover:text-ink"
                         }`}
@@ -234,7 +237,7 @@ export function DeviceListPanel({
         )}
         {filtered.length > visible && (
           <button onClick={() => setVisible((v) => v + STEP)} className="mt-1 w-full rounded-xl py-2.5 text-xs font-medium text-ink-dim hover:bg-fg/[0.04] hover:text-ink">
-            Ver más ({filtered.length - visible})
+            {t("common.see_more", { count: filtered.length - visible })}
           </button>
         )}
       </div>
