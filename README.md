@@ -153,9 +153,9 @@ Mobile-first: the same dashboard works on a phone, with a bottom tab bar and
 a unit card over the map.
 
 *Screenshots use a demo fleet with simulated GPS traces over real roads and
-simulated camera feeds (test patterns). The dashboard is currently in
-Spanish; an English UI is on the roadmap
-([#22](https://github.com/openmdvr/openmdvr/issues/22)).*
+simulated camera feeds (test patterns). The dashboard ships in Spanish and
+English; the language can be switched at runtime and adding a new locale is
+a single JSON file.*
 
 ## Features
 

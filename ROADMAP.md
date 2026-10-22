@@ -28,7 +28,7 @@ one roof.
 - [ ] Map security controls to NIST SP 800-53 / CIS Controls
 
 ## Platform
-- [ ] English/Spanish UI (i18n) — the dashboard is currently Spanish only
+- [x] English/Spanish UI (i18n) — runtime language switch, new locales via a single JSON file
 - [ ] Replace react-leaflet (Hippocratic license) with plain Leaflet bindings
 - [ ] One-command install script and hardened production compose profile
 - [ ] Horizontal scaling guide (multiple device-server instances behind a TCP load balancer)
