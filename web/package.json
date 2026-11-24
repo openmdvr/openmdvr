@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "i18next": "^23.0.0",
+    "i18next": "^27.2.6",
     "react-i18next": "^14.0.0",
     "@maplibre/maplibre-gl-leaflet": "0.1.4",
     "leaflet": "^1.9.4",
